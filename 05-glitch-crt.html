@@ -1,0 +1,309 @@
+<!-- 05-glitch-crt.html — Signal-99 CRT Glitch Lab: A retro CRT monitor toy with procedural feeds and real-time VHS, RGB, and static corruption dials. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Signal-99 CRT Glitch Lab</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0b0c10;
+    color: #e6ecf5;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .tv-case {
+    width: 100%;
+    max-width: 960px;
+    background: linear-gradient(145deg, #2d313d 0%, #1b1e26 100%);
+    border: 3px solid #3c4252;
+    border-radius: 26px;
+    padding: 24px;
+    display: grid;
+    grid-template-columns: 1fr 250px;
+    gap: 20px;
+    box-shadow: 0 30px 70px rgba(0,0,0,0.7), inset 0 2px 0 rgba(255,255,255,0.1);
+  }
+  @media (max-width: 780px) { .tv-case { grid-template-columns: 1fr; } }
+  .screen-bezel {
+    background: #08090c;
+    border: 10px solid #13161d;
+    border-radius: 22px;
+    padding: 8px;
+    position: relative;
+    box-shadow: inset 0 0 36px rgba(0,0,0,0.9);
+  }
+  canvas#crt {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 14px;
+  }
+  .crt-glass {
+    pointer-events: none;
+    position: absolute;
+    inset: 8px;
+    border-radius: 14px;
+    background: radial-gradient(circle at 25% 20%, rgba(255,255,255,0.08) 0%, transparent 45%),
+                repeating-linear-gradient(0deg, rgba(0,0,0,0.22) 0px, rgba(0,0,0,0.22) 1px, transparent 1px, transparent 3px);
+  }
+  .deck {
+    background: #171a22;
+    border: 1px solid #2e3444;
+    border-radius: 16px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .deck h1 { font-size: 1rem; color: #38e4ae; letter-spacing: 0.06em; }
+  .deck p { font-size: 0.72rem; color: #8c96ab; line-height: 1.4; }
+  .dial { display: flex; flex-direction: column; gap: 4px; font-size: 0.76rem; color: #b4bfd4; }
+  .dial input { accent-color: #ff5e5b; }
+  button, select {
+    background: #232836;
+    color: #eef2fa;
+    border: 1px solid #3a4256;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-family: inherit;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  button:hover { border-color: #38e4ae; }
+  button.on { background: #38e4ae; color: #081a14; border-color: #38e4ae; }
+</style>
+</head>
+<body>
+<div class="tv-case">
+  <div class="screen-bezel">
+    <canvas id="crt" width="600" height="420"></canvas>
+    <div class="crt-glass"></div>
+  </div>
+  <div class="deck">
+    <div>
+      <h1>SIGNAL-99 CRT LAB</h1>
+      <p>Corrupt live procedural video feeds with VHS tracking, RGB split, and static bursts.</p>
+    </div>
+
+    <select id="feed">
+      <option value="city">CH 01: Neon Skyline</option>
+      <option value="cube">CH 02: Wireframe Cube</option>
+      <option value="test">CH 03: Broadcast Card</option>
+    </select>
+
+    <div class="dial">
+      <label>RGB Chromatic Split</label>
+      <input id="rgb" type="range" min="0" max="24" value="4">
+    </div>
+    <div class="dial">
+      <label>VHS Tracking Tear</label>
+      <input id="tear" type="range" min="0" max="40" value="6">
+    </div>
+    <div class="dial">
+      <label>Snow Static</label>
+      <input id="noise" type="range" min="0" max="80" value="14">
+    </div>
+    <div class="dial">
+      <label>Signal Warp</label>
+      <input id="warp" type="range" min="0" max="30" value="5">
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <button id="degaussBtn">Degauss Snap</button>
+      <button id="audioBtn">Static Audio: Off</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('crt');
+  const ctx = canvas.getContext('2d');
+  const off = document.createElement('canvas');
+  off.width = canvas.width; off.height = canvas.height;
+  const octx = off.getContext('2d');
+
+  const feedEl = document.getElementById('feed');
+  const rgbEl = document.getElementById('rgb');
+  const tearEl = document.getElementById('tear');
+  const noiseEl = document.getElementById('noise');
+  const warpEl = document.getElementById('warp');
+  const audioBtn = document.getElementById('audioBtn');
+
+  let t = 0, degauss = 0;
+  let audioCtx = null, staticGain = null, audioOn = false;
+
+  function drawFeed() {
+    const w = off.width, h = off.height;
+    const mode = feedEl.value;
+    octx.fillStyle = '#070a12';
+    octx.fillRect(0, 0, w, h);
+
+    if (mode === 'city') {
+      const grad = octx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, '#140b2d');
+      grad.addColorStop(0.65, '#3b155f');
+      grad.addColorStop(1, '#090c14');
+      octx.fillStyle = grad;
+      octx.fillRect(0, 0, w, h);
+
+      // Sun
+      octx.fillStyle = '#ff5e7e';
+      octx.beginPath(); octx.arc(300, 175, 68, 0, Math.PI * 2); octx.fill();
+      for (let y = 140; y < 245; y += 12) {
+        octx.fillStyle = '#251042';
+        octx.fillRect(220, y, 160, 4);
+      }
+
+      // Buildings
+      const heights = [130, 190, 110, 230, 165, 210, 140, 180, 125];
+      heights.forEach((bh, i) => {
+        const bx = i * 68;
+        octx.fillStyle = '#0c101d';
+        octx.fillRect(bx, h - bh, 58, bh);
+        octx.fillStyle = i % 2 === 0 ? '#38e4ae' : '#ffbe3b';
+        for (let wy = h - bh + 14; wy < h - 20; wy += 22) {
+          octx.fillRect(bx + 12, wy, 10, 8);
+          octx.fillRect(bx + 34, wy, 10, 8);
+        }
+      });
+    } else if (mode === 'cube') {
+      octx.fillStyle = '#06110e';
+      octx.fillRect(0, 0, w, h);
+      const pts = [
+        [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],
+        [-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]
+      ];
+      const edges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+      const rx = t * 0.9, ry = t * 1.3;
+      const proj = pts.map(([x,y,z]) => {
+        let nx = x * Math.cos(ry) - z * Math.sin(ry);
+        let nz = x * Math.sin(ry) + z * Math.cos(ry);
+        let ny = y * Math.cos(rx) - nz * Math.sin(rx);
+        nz = y * Math.sin(rx) + nz * Math.cos(rx);
+        const s = 260 / (nz + 3.4);
+        return [w/2 + nx * s, h/2 + ny * s];
+      });
+      octx.strokeStyle = '#38e4ae';
+      octx.lineWidth = 3;
+      edges.forEach(([a,b]) => {
+        octx.beginPath();
+        octx.moveTo(proj[a][0], proj[a][1]);
+        octx.lineTo(proj[b][0], proj[b][1]);
+        octx.stroke();
+      });
+    } else {
+      const cols = ['#e2e8f0','#facc15','#22d3ee','#4ade80','#e879f9','#f87171','#3b82f6'];
+      cols.forEach((c, i) => {
+        octx.fillStyle = c;
+        octx.fillRect(i * (w / cols.length), 0, w / cols.length + 1, h * 0.72);
+      });
+      octx.fillStyle = '#111827';
+      octx.fillRect(0, h * 0.72, w, h * 0.28);
+      octx.fillStyle = '#fff';
+      octx.font = 'bold 28px monospace';
+      octx.fillText('SIGNAL-99 // CH-03', 135, h * 0.88);
+    }
+  }
+
+  function render() {
+    requestAnimationFrame(render);
+    t += 0.025;
+    drawFeed();
+
+    const w = canvas.width, h = canvas.height;
+    ctx.fillStyle = '#050608';
+    ctx.fillRect(0, 0, w, h);
+
+    const rgb = Number(rgbEl.value) + degauss * 18;
+    const tear = Number(tearEl.value);
+    const warp = Number(warpEl.value);
+    const noise = Number(noiseEl.value);
+
+    // Slice-by-slice glitch blit
+    const sliceH = 6;
+    for (let y = 0; y < h; y += sliceH) {
+      let dx = Math.sin(y * 0.04 + t * 5) * warp;
+      if (Math.random() < tear * 0.008) dx += (Math.random() - 0.5) * tear * 3;
+      if (degauss > 0.01) dx += Math.sin(y * 0.2 + t * 40) * degauss * 30;
+
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(off, 0, y, w, sliceH, dx, y, w, sliceH);
+
+      if (rgb > 0) {
+        ctx.globalCompositeOperation = 'screen';
+        ctx.globalAlpha = 0.45;
+        ctx.drawImage(off, 0, y, w, sliceH, dx - rgb, y, w, sliceH);
+        ctx.drawImage(off, 0, y, w, sliceH, dx + rgb, y, w, sliceH);
+        ctx.globalAlpha = 1;
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Static snow specks
+    const specks = noise * 18;
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
+    for (let i = 0; i < specks; i++) {
+      ctx.fillRect(Math.random() * w, Math.random() * h, 2, 2);
+    }
+
+    if (degauss > 0) degauss *= 0.92;
+  }
+
+  document.getElementById('degaussBtn').addEventListener('click', () => {
+    degauss = 1;
+    if (audioOn && audioCtx) {
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(110, now);
+      osc.frequency.exponentialRampToValueAtTime(42, now + 0.35);
+      g.gain.setValueAtTime(0.2, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.36);
+      osc.connect(g); g.connect(audioCtx.destination);
+      osc.start(now); osc.stop(now + 0.37);
+    }
+  });
+
+  audioBtn.addEventListener('click', () => {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 2, audioCtx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf; src.loop = true;
+      const filt = audioCtx.createBiquadFilter();
+      filt.type = 'bandpass'; filt.frequency.value = 1400;
+      staticGain = audioCtx.createGain();
+      staticGain.gain.value = 0;
+      src.connect(filt); filt.connect(staticGain); staticGain.connect(audioCtx.destination);
+      src.start();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    audioOn = !audioOn;
+    audioBtn.textContent = audioOn ? 'Static Audio: On' : 'Static Audio: Off';
+    audioBtn.classList.toggle('on', audioOn);
+    staticGain.gain.setTargetAtTime(audioOn ? (Number(noiseEl.value) / 80) * 0.08 + 0.01 : 0, audioCtx.currentTime, 0.05);
+  });
+
+  noiseEl.addEventListener('input', () => {
+    if (audioOn && staticGain) {
+      staticGain.gain.setTargetAtTime((Number(noiseEl.value) / 80) * 0.08 + 0.01, audioCtx.currentTime, 0.05);
+    }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

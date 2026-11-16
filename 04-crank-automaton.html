@@ -1,0 +1,384 @@
+<!-- 04-crank-automaton.html — Clockwork Gear & Automaton Sandbox: Place, mesh, and spin interlocking brass gears to drive a mechanical bird automaton. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clockwork Gear & Automaton Sandbox</title>
+<style>
+  :root {
+    --bg: #15120f;
+    --panel: #1f1a15;
+    --border: #3d3328;
+    --brass: #d4a64a;
+    --text: #f3eadc;
+    --muted: #a69580;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(circle at 30% 20%, #241e18 0%, var(--bg) 70%);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 18px;
+  }
+  .bar {
+    width: 100%;
+    max-width: 1020px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px 18px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .bar h1 { font-size: 1.12rem; color: var(--brass); }
+  .bar p { font-size: 0.78rem; color: var(--muted); }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button, select {
+    background: #2b241c;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--brass); }
+  button.active { background: var(--brass); color: #19130a; border-color: var(--brass); }
+  canvas#board {
+    width: 100%;
+    max-width: 1020px;
+    height: 540px;
+    background: #100e0c;
+    border: 2px solid var(--border);
+    border-radius: 16px;
+    cursor: grab;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+  }
+  canvas#board:active { cursor: grabbing; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <div>
+    <h1>Clockwork Gear &amp; Automaton Sandbox</h1>
+    <p>Drag gears to mesh them with the motor gear, spin the crank, and power the mechanical bird</p>
+  </div>
+  <div class="btns">
+    <select id="sizeSel">
+      <option value="12">Add Small Gear (12T)</option>
+      <option value="18" selected>Add Medium Gear (18T)</option>
+      <option value="24">Add Large Gear (24T)</option>
+    </select>
+    <button id="addBtn">+ Place Gear</button>
+    <button id="motorBtn" class="active">Motor: On</button>
+    <button id="soundBtn">Ticking: Off</button>
+    <button id="resetBtn">Reset</button>
+  </div>
+</div>
+<canvas id="board" width="1020" height="540"></canvas>
+
+<script>
+(() => {
+  const canvas = document.getElementById('board');
+  const ctx = canvas.getContext('2d');
+  const sizeSel = document.getElementById('sizeSel');
+  const motorBtn = document.getElementById('motorBtn');
+  const soundBtn = document.getElementById('soundBtn');
+
+  const MODULE = 3.2;
+  let motorOn = true;
+  let soundOn = false;
+  let audioCtx = null;
+  let lastTickStep = 0;
+
+  let gears = [];
+  let dragging = null, dragOffX = 0, dragOffY = 0;
+
+  function makeGear(x, y, teeth, isMotor = false, isBird = false) {
+    return {
+      x, y, teeth,
+      radius: teeth * MODULE,
+      angle: 0,
+      speed: isMotor ? 0.025 : 0,
+      isMotor,
+      isBird,
+      connected: isMotor,
+      color: isMotor ? '#e07a5f' : isBird ? '#81b29a' : '#d4a64a'
+    };
+  }
+
+  function resetGears() {
+    gears = [
+      makeGear(180, 270, 16, true, false),
+      makeGear(288, 270, 18, false, false),
+      makeGear(416, 270, 22, false, false),
+      makeGear(550, 270, 20, false, true)
+    ];
+  }
+
+  function solveKinematics() {
+    gears.forEach(g => {
+      if (!g.isMotor) { g.speed = 0; g.connected = false; }
+      else { g.speed = motorOn ? 0.024 : 0; g.connected = true; }
+    });
+
+    const queue = gears.filter(g => g.isMotor);
+    const visited = new Set(queue);
+
+    while (queue.length) {
+      const cur = queue.shift();
+      for (const other of gears) {
+        if (visited.has(other)) continue;
+        const dist = Math.hypot(other.x - cur.x, other.y - cur.y);
+        const ideal = cur.radius + other.radius;
+        if (Math.abs(dist - ideal) < 15) {
+          other.connected = true;
+          other.speed = -cur.speed * (cur.teeth / other.teeth);
+          visited.add(other);
+          queue.push(other);
+        }
+      }
+    }
+  }
+
+  function drawGear(g) {
+    ctx.save();
+    ctx.translate(g.x, g.y);
+    ctx.rotate(g.angle);
+
+    const r = g.radius;
+    const outerR = r + 7;
+    const innerR = r - 6;
+    const teeth = g.teeth;
+
+    ctx.beginPath();
+    for (let i = 0; i < teeth; i++) {
+      const a0 = (i / teeth) * Math.PI * 2;
+      const a1 = ((i + 0.35) / teeth) * Math.PI * 2;
+      const a2 = ((i + 0.5) / teeth) * Math.PI * 2;
+      const a3 = ((i + 0.85) / teeth) * Math.PI * 2;
+      ctx.lineTo(Math.cos(a0) * innerR, Math.sin(a0) * innerR);
+      ctx.lineTo(Math.cos(a1) * outerR, Math.sin(a1) * outerR);
+      ctx.lineTo(Math.cos(a2) * outerR, Math.sin(a2) * outerR);
+      ctx.lineTo(Math.cos(a3) * innerR, Math.sin(a3) * innerR);
+    }
+    ctx.closePath();
+
+    const grad = ctx.createRadialGradient(-r * 0.2, -r * 0.2, 4, 0, 0, outerR);
+    grad.addColorStop(0, '#f3d999');
+    grad.addColorStop(1, g.connected ? g.color : '#695d4f');
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#1b1611';
+    ctx.stroke();
+
+    // Spokes
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.62, 0, Math.PI * 2);
+    ctx.fillStyle = '#14110e';
+    ctx.fill();
+
+    for (let s = 0; s < 4; s++) {
+      ctx.save();
+      ctx.rotate((s * Math.PI) / 2);
+      ctx.fillStyle = g.connected ? g.color : '#695d4f';
+      ctx.fillRect(-4, -r * 0.64, 8, r * 1.28);
+      ctx.restore();
+    }
+
+    // Center hub
+    ctx.beginPath();
+    ctx.arc(0, 0, 10, 0, Math.PI * 2);
+    ctx.fillStyle = '#e5dccb';
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawAutomatonBird(birdGear) {
+    const bx = birdGear.x;
+    const by = birdGear.y - 125;
+    const wingAngle = Math.sin(birdGear.angle * 3) * 0.45;
+    const headBob = Math.cos(birdGear.angle * 3) * 4;
+
+    // Brass linkage rod
+    const pinX = birdGear.x + Math.cos(birdGear.angle) * 24;
+    const pinY = birdGear.y + Math.sin(birdGear.angle) * 24;
+    ctx.strokeStyle = '#d4a64a';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(pinX, pinY);
+    ctx.lineTo(bx, by + 20);
+    ctx.stroke();
+
+    // Perch
+    ctx.strokeStyle = '#6f5e4d';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(bx - 45, by + 35);
+    ctx.lineTo(bx + 45, by + 35);
+    ctx.stroke();
+
+    // Bird body
+    ctx.save();
+    ctx.translate(bx, by + headBob);
+    ctx.fillStyle = '#81b29a';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 32, 20, -0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#1b1611';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Head & beak
+    ctx.beginPath();
+    ctx.arc(28, -14, 14, 0, Math.PI * 2);
+    ctx.fillStyle = '#f2cc8f';
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(40, -17);
+    ctx.lineTo(54, -12);
+    ctx.lineTo(40, -7);
+    ctx.closePath();
+    ctx.fillStyle = '#e07a5f';
+    ctx.fill();
+
+    // Eye
+    ctx.beginPath();
+    ctx.arc(32, -16, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#111';
+    ctx.fill();
+
+    // Animated brass wing
+    ctx.save();
+    ctx.translate(-4, -4);
+    ctx.rotate(wingAngle);
+    ctx.beginPath();
+    ctx.ellipse(-10, -10, 22, 10, -0.4, 0, Math.PI * 2);
+    ctx.fillStyle = '#d4a64a';
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.restore();
+  }
+
+  function playTick() {
+    if (!soundOn || !audioCtx) return;
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(920, now);
+    osc.frequency.exponentialRampToValueAtTime(280, now + 0.025);
+    g.gain.setValueAtTime(0.08, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(now); osc.stop(now + 0.035);
+  }
+
+  function loop() {
+    requestAnimationFrame(loop);
+    solveKinematics();
+
+    ctx.fillStyle = '#100e0c';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Drafting grid
+    ctx.strokeStyle = 'rgba(212,166,74,0.06)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < canvas.width; x += 30) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+    }
+    for (let y = 0; y < canvas.height; y += 30) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+    }
+
+    gears.forEach(g => {
+      g.angle += g.speed;
+      drawGear(g);
+    });
+
+    const motor = gears[0];
+    if (motor && motorOn) {
+      const step = Math.floor(Math.abs(motor.angle) * 6);
+      if (step !== lastTickStep) {
+        lastTickStep = step;
+        playTick();
+      }
+    }
+
+    const bird = gears.find(g => g.isBird);
+    if (bird) drawAutomatonBird(bird);
+  }
+
+  function getPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    const p = getPos(e);
+    for (let i = gears.length - 1; i >= 0; i--) {
+      const g = gears[i];
+      if (Math.hypot(p.x - g.x, p.y - g.y) <= g.radius + 8) {
+        dragging = g;
+        dragOffX = p.x - g.x;
+        dragOffY = p.y - g.y;
+        break;
+      }
+    }
+  });
+
+  window.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const p = getPos(e);
+    dragging.x = Math.max(40, Math.min(canvas.width - 40, p.x - dragOffX));
+    dragging.y = Math.max(40, Math.min(canvas.height - 40, p.y - dragOffY));
+  });
+
+  window.addEventListener('pointerup', () => { dragging = null; });
+
+  document.getElementById('addBtn').addEventListener('click', () => {
+    const teeth = Number(sizeSel.value);
+    gears.push(makeGear(150 + Math.random() * 680, 140 + Math.random() * 260, teeth));
+  });
+
+  motorBtn.addEventListener('click', () => {
+    motorOn = !motorOn;
+    motorBtn.textContent = motorOn ? 'Motor: On' : 'Motor: Off';
+    motorBtn.classList.toggle('active', motorOn);
+  });
+
+  soundBtn.addEventListener('click', () => {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? 'Ticking: On' : 'Ticking: Off';
+    soundBtn.classList.toggle('active', soundOn);
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', resetGears);
+
+  resetGears();
+  loop();
+})();
+</script>
+</body>
+</html>

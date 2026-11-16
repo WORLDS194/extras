@@ -1,0 +1,263 @@
+<!-- 06-pixel-critter.html — Pocket Pixel Terrarium Critter: A handheld LCD virtual pet with procedural pixel animations, mini-game, and chiptune beeps. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pocket Pixel Critter</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(circle at 50% 25%, #23273d 0%, #10121c 70%);
+    color: #f1f5f9;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .handheld {
+    width: 380px;
+    background: linear-gradient(160deg, #ffbe3b 0%, #f59e0b 100%);
+    border-radius: 34px 34px 56px 34px;
+    padding: 24px;
+    box-shadow: 0 28px 60px rgba(0,0,0,0.6), inset 0 3px 0 rgba(255,255,255,0.45);
+    border: 3px solid #b45309;
+    color: #1e293b;
+  }
+  .bezel {
+    background: #272b38;
+    border-radius: 16px 16px 32px 16px;
+    padding: 16px;
+    box-shadow: inset 0 4px 12px rgba(0,0,0,0.65);
+  }
+  .brand-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #94a3b8;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+  }
+  canvas#lcd {
+    width: 100%;
+    height: auto;
+    background: #9bbc0f;
+    border: 4px solid #0f380f;
+    border-radius: 6px;
+    image-rendering: pixelated;
+    display: block;
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin: 14px 0;
+  }
+  .stat {
+    background: rgba(255,255,255,0.35);
+    border-radius: 10px;
+    padding: 7px;
+    text-align: center;
+    font-size: 0.74rem;
+    font-weight: 800;
+  }
+  .controls {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-top: 10px;
+  }
+  button {
+    background: #1e293b;
+    color: #f8fafc;
+    border: none;
+    border-radius: 12px;
+    padding: 11px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 4px 0 #0f172a;
+    transition: transform 0.07s;
+  }
+  button:active { transform: translateY(2px); box-shadow: 0 2px 0 #0f172a; }
+  button.pink { background: #db2777; box-shadow: 0 4px 0 #831843; }
+  .desc {
+    text-align: center;
+    font-size: 0.72rem;
+    color: #451a03;
+    font-weight: 700;
+    margin-top: 12px;
+  }
+</style>
+</head>
+<body>
+<div class="handheld">
+  <div class="bezel">
+    <div class="brand-line">
+      <span>POCKET CRITTER // DOT-MATRIX</span>
+      <span id="soundTag" style="cursor:pointer;color:#fbbf24;">SOUND: OFF</span>
+    </div>
+    <canvas id="lcd" width="160" height="120"></canvas>
+  </div>
+
+  <div class="stats">
+    <div class="stat">HUNGER<br><span id="sHunger">80%</span></div>
+    <div class="stat">MOOD<br><span id="sMood">85%</span></div>
+    <div class="stat">ENERGY<br><span id="sEnergy">90%</span></div>
+  </div>
+
+  <div class="controls">
+    <button id="feedBtn">Feed Snack</button>
+    <button id="petBtn" class="pink">Pet Critter</button>
+    <button id="playBtn">Play Catch</button>
+    <button id="sleepBtn">Toggle Lights</button>
+  </div>
+  <div class="desc">Pocket Pixel Critter — poke, feed, and play with your LCD desk pet</div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('lcd');
+  const ctx = canvas.getContext('2d');
+  const soundTag = document.getElementById('soundTag');
+
+  let hunger = 80, mood = 85, energy = 90;
+  let sleeping = false, actionMsg = 'CHILLING', actionTimer = 0;
+  let cx = 72, dir = 1, tick = 0;
+  let audioCtx = null, soundOn = false;
+
+  // 12x10 pixel sprite (0=transparent, 1=dark, 2=mid)
+  const SPRITE_A = [
+    [0,0,1,0,0,0,0,0,0,1,0,0],
+    [0,0,1,1,0,0,0,0,1,1,0,0],
+    [0,1,2,2,1,1,1,1,2,2,1,0],
+    [1,2,2,2,2,2,2,2,2,2,2,1],
+    [1,2,1,2,2,2,2,2,2,1,2,1],
+    [1,2,2,2,2,1,1,2,2,2,2,1],
+    [1,2,2,2,2,2,2,2,2,2,2,1],
+    [0,1,2,2,2,2,2,2,2,2,1,0],
+    [0,0,1,1,0,1,1,0,1,1,0,0],
+    [0,0,1,0,0,0,0,0,0,1,0,0]
+  ];
+
+  function beep(freq, dur = 0.08) {
+    if (!soundOn || !audioCtx) return;
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(freq, now);
+    g.gain.setValueAtTime(0.08, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(now); osc.stop(now + dur + 0.01);
+  }
+
+  soundTag.addEventListener('click', () => {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    soundOn = !soundOn;
+    soundTag.textContent = soundOn ? 'SOUND: ON' : 'SOUND: OFF';
+    if (soundOn) beep(660, 0.07);
+  });
+
+  function updateStats() {
+    document.getElementById('sHunger').textContent = Math.round(hunger) + '%';
+    document.getElementById('sMood').textContent = Math.round(mood) + '%';
+    document.getElementById('sEnergy').textContent = Math.round(energy) + '%';
+  }
+
+  function drawSprite(x, y, scale = 4) {
+    const pal = sleeping ? ['#0f380f', '#0f380f', '#306230'] : ['', '#0f380f', '#306230'];
+    SPRITE_A.forEach((row, ry) => {
+      row.forEach((px, rx) => {
+        if (!px) return;
+        ctx.fillStyle = pal[px];
+        ctx.fillRect(x + rx * scale, y + ry * scale, scale, scale);
+      });
+    });
+  }
+
+  function frame() {
+    requestAnimationFrame(frame);
+    tick++;
+    ctx.fillStyle = sleeping ? '#0f380f' : '#9bbc0f';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Floor line
+    ctx.fillStyle = sleeping ? '#306230' : '#306230';
+    ctx.fillRect(0, 98, canvas.width, 3);
+
+    if (!sleeping && tick % 25 === 0) {
+      cx += dir * 6;
+      if (cx > 106 || cx < 12) dir *= -1;
+    }
+
+    const bob = !sleeping && (tick % 30 < 15) ? 0 : 2;
+    drawSprite(cx, 56 + bob, 4);
+
+    // Status text
+    ctx.fillStyle = sleeping ? '#8bac0f' : '#0f380f';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText(sleeping ? 'ZZZ... SLEEPING' : actionMsg, 8, 14);
+
+    if (actionTimer > 0) {
+      actionTimer--;
+      if (actionTimer === 0) actionMsg = 'CHILLING';
+    }
+
+    if (tick % 180 === 0) {
+      if (sleeping) energy = Math.min(100, energy + 4);
+      else {
+        hunger = Math.max(0, hunger - 1);
+        mood = Math.max(0, mood - 1);
+        energy = Math.max(0, energy - 1);
+      }
+      updateStats();
+    }
+  }
+
+  document.getElementById('feedBtn').addEventListener('click', () => {
+    if (sleeping) return;
+    hunger = Math.min(100, hunger + 16);
+    actionMsg = 'YUM! +SNACK';
+    actionTimer = 90;
+    beep(523, 0.07);
+    setTimeout(() => beep(659, 0.09), 80);
+    updateStats();
+  });
+
+  document.getElementById('petBtn').addEventListener('click', () => {
+    mood = Math.min(100, mood + 14);
+    actionMsg = '<3 HAPPY!';
+    actionTimer = 90;
+    beep(784, 0.07);
+    updateStats();
+  });
+
+  document.getElementById('playBtn').addEventListener('click', () => {
+    if (sleeping || energy < 10) return;
+    mood = Math.min(100, mood + 18);
+    energy = Math.max(0, energy - 10);
+    actionMsg = 'CATCH! +FUN';
+    actionTimer = 90;
+    beep(880, 0.06);
+    setTimeout(() => beep(987, 0.08), 70);
+    updateStats();
+  });
+
+  document.getElementById('sleepBtn').addEventListener('click', () => {
+    sleeping = !sleeping;
+    beep(sleeping ? 330 : 587, 0.1);
+  });
+
+  updateStats();
+  frame();
+})();
+</script>
+</body>
+</html>

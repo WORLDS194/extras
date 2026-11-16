@@ -1,0 +1,284 @@
+<!-- 12-chord-compass.html — Interactive Chord & Scale Compass: Explore scales, chord voicings, and progressions on a playable SVG keyboard. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interactive Chord & Scale Compass</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(circle at 30% 15%, #1d2238 0%, #0e1019 70%);
+    color: #eef2fb;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .wrap {
+    width: 100%;
+    max-width: 940px;
+    background: #161926;
+    border: 1px solid #2d344d;
+    border-radius: 18px;
+    padding: 22px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.55);
+  }
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .head h1 { font-size: 1.2rem; }
+  .head p { font-size: 0.8rem; color: #919cb5; margin-top: 2px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; }
+  select, button {
+    background: #22283b;
+    color: #eef2fb;
+    border: 1px solid #394361;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.on { background: #a78bfa; color: #160c2e; border-color: #a78bfa; }
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .chord-card {
+    background: #10131e;
+    border: 1px solid #2b324a;
+    border-radius: 12px;
+    padding: 12px;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.1s, border-color 0.15s;
+  }
+  .chord-card:hover { transform: translateY(-2px); border-color: #a78bfa; }
+  .chord-card.active { border-color: #38e4ae; background: #132224; }
+  .chord-card .deg { font-size: 0.72rem; color: #8c96ad; font-weight: 700; }
+  .chord-card .name { font-size: 1.08rem; font-weight: 800; margin: 4px 0; color: #fff; }
+  .chord-card .notes { font-size: 0.74rem; color: #38e4ae; }
+  .piano-box {
+    background: #0d1018;
+    border: 1px solid #2a3147;
+    border-radius: 14px;
+    padding: 16px;
+    overflow-x: auto;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div>
+      <h1>Interactive Chord &amp; Scale Compass</h1>
+      <p>Pick a root and scale to inspect diatonic chords, click any chord card or piano key to audition</p>
+    </div>
+    <div class="controls">
+      <select id="rootSel"></select>
+      <select id="scaleSel">
+        <option value="major">Major (Ionian)</option>
+        <option value="minor">Natural Minor</option>
+        <option value="dorian">Dorian</option>
+        <option value="mixolydian">Mixolydian</option>
+      </select>
+      <button id="progBtn">Play I–V–vi–IV</button>
+      <button id="audioBtn">Audio: Muted</button>
+    </div>
+  </div>
+
+  <div class="info-grid" id="chordGrid"></div>
+  <div class="piano-box">
+    <svg id="piano" width="840" height="170" viewBox="0 0 840 170" style="display:block;margin:0 auto;"></svg>
+  </div>
+</div>
+
+<script>
+(() => {
+  const NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const SCALES = {
+    major: { steps: [0,2,4,5,7,9,11], quals: ['maj','min','min','maj','maj','min','dim'], romans: ['I','ii','iii','IV','V','vi','vii°'] },
+    minor: { steps: [0,2,3,5,7,8,10], quals: ['min','dim','maj','min','min','maj','maj'], romans: ['i','ii°','III','iv','v','VI','VII'] },
+    dorian: { steps: [0,2,3,5,7,9,10], quals: ['min','min','maj','maj','min','dim','maj'], romans: ['i','ii','III','IV','v','vi°','VII'] },
+    mixolydian: { steps: [0,2,4,5,7,9,10], quals: ['maj','min','dim','maj','min','min','maj'], romans: ['I','ii','iii°','IV','v','vi','VII'] }
+  };
+
+  const rootSel = document.getElementById('rootSel');
+  const scaleSel = document.getElementById('scaleSel');
+  const chordGrid = document.getElementById('chordGrid');
+  const piano = document.getElementById('piano');
+  const audioBtn = document.getElementById('audioBtn');
+
+  NOTES.forEach((n, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = 'Root: ' + n;
+    rootSel.appendChild(opt);
+  });
+
+  let activeNotes = new Set();
+  let audioCtx = null, audioOn = false;
+
+  function ensureAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+
+  function playFreqs(freqs, dur = 0.55) {
+    if (!audioOn || !audioCtx) return;
+    const now = audioCtx.currentTime;
+    freqs.forEach(f => {
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f, now);
+      g.gain.setValueAtTime(0.14, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.connect(g); g.connect(audioCtx.destination);
+      osc.start(now); osc.stop(now + dur + 0.02);
+    });
+  }
+
+  function midiToFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+
+  function renderPiano() {
+    piano.innerHTML = '';
+    const whites = [];
+    const blacks = [];
+    let wx = 0;
+    for (let m = 48; m <= 71; m++) {
+      const pc = m % 12;
+      const isBlack = [1,3,6,8,10].includes(pc);
+      if (!isBlack) {
+        whites.push({ m, x: wx, pc });
+        wx += 60;
+      } else {
+        blacks.push({ m, x: wx - 18, pc });
+      }
+    }
+
+    whites.forEach(k => {
+      const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      r.setAttribute('x', k.x + 1);
+      r.setAttribute('y', 2);
+      r.setAttribute('width', 58);
+      r.setAttribute('height', 164);
+      r.setAttribute('rx', 6);
+      r.setAttribute('fill', activeNotes.has(k.pc) ? '#38e4ae' : '#f8fafc');
+      r.setAttribute('stroke', '#1e293b');
+      r.style.cursor = 'pointer';
+      r.addEventListener('click', () => {
+        if (!audioOn) return;
+        playFreqs([midiToFreq(k.m)], 0.45);
+      });
+      piano.appendChild(r);
+
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', k.x + 30);
+      t.setAttribute('y', 150);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('font-size', '11');
+      t.setAttribute('font-weight', '700');
+      t.setAttribute('fill', '#334155');
+      t.textContent = NOTES[k.pc];
+      t.style.pointerEvents = 'none';
+      piano.appendChild(t);
+    });
+
+    blacks.forEach(k => {
+      const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      r.setAttribute('x', k.x);
+      r.setAttribute('y', 2);
+      r.setAttribute('width', 36);
+      r.setAttribute('height', 102);
+      r.setAttribute('rx', 5);
+      r.setAttribute('fill', activeNotes.has(k.pc) ? '#a78bfa' : '#1e293b');
+      r.setAttribute('stroke', '#0f172a');
+      r.style.cursor = 'pointer';
+      r.addEventListener('click', () => {
+        if (!audioOn) return;
+        playFreqs([midiToFreq(k.m)], 0.45);
+      });
+      piano.appendChild(r);
+    });
+  }
+
+  let currentChords = [];
+  function renderChords() {
+    const root = Number(rootSel.value);
+    const sc = SCALES[scaleSel.value];
+    chordGrid.innerHTML = '';
+    currentChords = [];
+
+    for (let i = 0; i < 7; i++) {
+      const n1 = (root + sc.steps[i]) % 12;
+      const n2 = (root + sc.steps[(i + 2) % 7]) % 12;
+      const n3 = (root + sc.steps[(i + 4) % 7]) % 12;
+      const pcs = [n1, n2, n3];
+      const freqs = pcs.map((pc, idx) => midiToFreq(60 + pc + (idx > 0 && pc < n1 ? 12 : 0)));
+      currentChords.push({ pcs, freqs });
+
+      const card = document.createElement('div');
+      card.className = 'chord-card';
+      card.innerHTML = `
+        <div class="deg">${sc.romans[i]}</div>
+        <div class="name">${NOTES[n1]} ${sc.quals[i]}</div>
+        <div class="notes">${pcs.map(p => NOTES[p]).join(' · ')}</div>
+      `;
+      card.addEventListener('click', () => {
+        document.querySelectorAll('.chord-card').forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        activeNotes = new Set(pcs);
+        renderPiano();
+        playFreqs(freqs);
+      });
+      chordGrid.appendChild(card);
+    }
+    activeNotes = new Set(currentChords[0].pcs);
+    renderPiano();
+  }
+
+  audioBtn.addEventListener('click', () => {
+    ensureAudio();
+    audioOn = !audioOn;
+    audioBtn.textContent = audioOn ? 'Audio: Live' : 'Audio: Muted';
+    audioBtn.classList.toggle('on', audioOn);
+  });
+
+  document.getElementById('progBtn').addEventListener('click', () => {
+    if (!audioOn) {
+      ensureAudio();
+      audioOn = true;
+      audioBtn.textContent = 'Audio: Live';
+      audioBtn.classList.add('on');
+    }
+    const order = [0, 4, 5, 3];
+    order.forEach((idx, step) => {
+      setTimeout(() => {
+        const cards = document.querySelectorAll('.chord-card');
+        cards.forEach(c => c.classList.remove('active'));
+        cards[idx]?.classList.add('active');
+        activeNotes = new Set(currentChords[idx].pcs);
+        renderPiano();
+        playFreqs(currentChords[idx].freqs, 0.52);
+      }, step * 580);
+    });
+  });
+
+  rootSel.addEventListener('change', renderChords);
+  scaleSel.addEventListener('change', renderChords);
+  renderChords();
+})();
+</script>
+</body>
+</html>

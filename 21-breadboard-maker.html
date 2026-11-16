@@ -1,0 +1,366 @@
+<!-- 21-breadboard-maker.html — Interactive Breadboard Maker: Build live circuits on a solderless breadboard with wires, LEDs, switches, resistors, and buzzer. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interactive Breadboard Maker</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0d1117;
+    color: #eef2f8;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 18px;
+  }
+  .bar {
+    width: 100%;
+    max-width: 1040px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 14px;
+    padding: 12px 18px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .bar h1 { font-size: 1.12rem; color: #58a6ff; }
+  .bar p { font-size: 0.78rem; color: #8b949e; }
+  .tools { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+  button, select {
+    background: #21262d;
+    color: #f0f6fc;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 7px 11px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.active { background: #238636; border-color: #2ea043; color: #fff; }
+  button.pwr.active { background: #da3633; border-color: #f85149; }
+  canvas#bb {
+    width: 100%;
+    max-width: 1040px;
+    aspect-ratio: 1040 / 480;
+    background: #11161d;
+    border: 2px solid #30363d;
+    border-radius: 16px;
+    cursor: crosshair;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.65);
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <div>
+    <h1>Interactive Breadboard Maker</h1>
+    <p>Select a component or wire, click two holes to place it, click switches to toggle, and power the 5V rail</p>
+  </div>
+  <div class="tools">
+    <button class="tool active" data-t="wire">Wire</button>
+    <button class="tool" data-t="led-red">Red LED</button>
+    <button class="tool" data-t="led-green">Green LED</button>
+    <button class="tool" data-t="led-blue">Blue LED</button>
+    <button class="tool" data-t="res">Resistor</button>
+    <button class="tool" data-t="sw">Switch</button>
+    <button class="tool" data-t="buz">Buzzer</button>
+    <button class="tool" data-t="del">Remove</button>
+    <button id="pwrBtn" class="pwr active">5V Power: ON</button>
+    <button id="soundBtn">Audio: Off</button>
+    <button id="demoBtn">Load Demo</button>
+  </div>
+</div>
+<canvas id="bb" width="1040" height="480"></canvas>
+
+<script>
+(() => {
+  const canvas = document.getElementById('bb');
+  const ctx = canvas.getContext('2d');
+  const COLS = 30;
+  const ROWS = ['+top','-top','a','b','c','d','e','f','g','h','i','j','+bot','-bot'];
+  const START_X = 95, STEP_X = 29;
+  const ROW_Y = {
+    '+top': 58, '-top': 86,
+    'a': 142, 'b': 168, 'c': 194, 'd': 220, 'e': 246,
+    'f': 294, 'g': 320, 'h': 346, 'i': 372, 'j': 398,
+    '+bot': 438, '-bot': 462
+  };
+
+  let tool = 'wire';
+  let powerOn = true;
+  let pendingHole = null;
+  let parts = [];
+  let audioCtx = null, soundOn = false, buzOsc = null, buzGain = null;
+
+  function holePos(c, r) {
+    return { x: START_X + c * STEP_X, y: ROW_Y[r] };
+  }
+
+  function netId(c, r) {
+    if (r === '+top') return 'rail_+top';
+    if (r === '-top') return 'rail_-top';
+    if (r === '+bot') return 'rail_+bot';
+    if (r === '-bot') return 'rail_-bot';
+    if ('abcde'.includes(r)) return `top_${c}`;
+    return `bot_${c}`;
+  }
+
+  function solveCircuit() {
+    // Build adjacency of conducting nets
+    const adj = new Map();
+    const addEdge = (a, b) => {
+      if (!adj.has(a)) adj.set(a, []);
+      if (!adj.has(b)) adj.set(b, []);
+      adj.get(a).push(b);
+      adj.get(b).push(a);
+    };
+
+    const reachFrom = (startNet, blockedPart) => {
+      const vis = new Set([startNet]);
+      const q = [startNet];
+      while (q.length) {
+        const cur = q.shift();
+        for (const p of parts) {
+          if (p === blockedPart) continue;
+          if (p.type === 'wire' || p.type === 'res' || (p.type === 'sw' && p.closed)) {
+            const n1 = netId(p.c1, p.r1), n2 = netId(p.c2, p.r2);
+            if (n1 === cur && !vis.has(n2)) { vis.add(n2); q.push(n2); }
+            if (n2 === cur && !vis.has(n1)) { vis.add(n1); q.push(n1); }
+          }
+        }
+      }
+      return vis;
+    };
+
+    let buzzerActive = false;
+    if (!powerOn) {
+      parts.forEach(p => { p.lit = false; });
+    } else {
+      const posReach = reachFrom('rail_+top', null);
+      const negReach = reachFrom('rail_-top', null);
+      parts.forEach(p => {
+        if (p.type.startsWith('led-') || p.type === 'buz') {
+          const n1 = netId(p.c1, p.r1);
+          const n2 = netId(p.c2, p.r2);
+          p.lit = (posReach.has(n1) && negReach.has(n2)) || (posReach.has(n2) && negReach.has(n1));
+          if (p.type === 'buz' && p.lit) buzzerActive = true;
+        }
+      });
+    }
+
+    if (buzGain && audioCtx) {
+      buzGain.gain.setTargetAtTime(soundOn && buzzerActive ? 0.06 : 0, audioCtx.currentTime, 0.03);
+    }
+  }
+
+  function drawBoard() {
+    solveCircuit();
+    ctx.fillStyle = '#11161d';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Breadboard plastic body
+    ctx.fillStyle = '#f1f5f9';
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(45, 28, 950, 444, 16);
+    ctx.fill();
+    ctx.stroke();
+
+    // Center IC ravine
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillRect(45, 263, 950, 14);
+
+    // Power rail stripes
+    ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(65, 44); ctx.lineTo(965, 44); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(65, 424); ctx.lineTo(965, 424); ctx.stroke();
+    ctx.strokeStyle = '#3b82f6';
+    ctx.beginPath(); ctx.moveTo(65, 102); ctx.lineTo(965, 102); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(65, 474); ctx.lineTo(965, 474); ctx.stroke();
+
+    // Rail labels
+    ctx.font = 'bold 14px monospace';
+    ctx.fillStyle = '#ef4444'; ctx.fillText('+', 62, 63); ctx.fillText('+', 62, 443);
+    ctx.fillStyle = '#3b82f6'; ctx.fillText('-', 62, 91); ctx.fillText('-', 62, 466);
+
+    // Holes
+    for (let c = 0; c < COLS; c++) {
+      for (const r of ROWS) {
+        const p = holePos(c, r);
+        const isSel = pendingHole && pendingHole.c === c && pendingHole.r === r;
+        ctx.fillStyle = isSel ? '#f59e0b' : '#1e293b';
+        ctx.fillRect(p.x - 4, p.y - 4, 8, 8);
+      }
+    }
+
+    // Draw components & wires
+    for (const p of parts) {
+      const a = holePos(p.c1, p.r1);
+      const b = holePos(p.c2, p.r2);
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+
+      if (p.type === 'wire') {
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = 4.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.quadraticCurveTo(mx, Math.min(a.y, b.y) - 22, b.x, b.y);
+        ctx.stroke();
+      } else if (p.type === 'res') {
+        ctx.strokeStyle = '#64748b'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.save();
+        ctx.translate(mx, my);
+        ctx.rotate(Math.atan2(b.y - a.y, b.x - a.x));
+        ctx.fillStyle = '#e7c99b';
+        ctx.fillRect(-16, -6, 32, 12);
+        ctx.fillStyle = '#b91c1c'; ctx.fillRect(-10, -6, 4, 12);
+        ctx.fillStyle = '#1e293b'; ctx.fillRect(-2, -6, 4, 12);
+        ctx.fillStyle = '#d97706'; ctx.fillRect(6, -6, 4, 12);
+        ctx.restore();
+      } else if (p.type === 'sw') {
+        ctx.strokeStyle = '#475569'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath(); ctx.roundRect(mx - 14, my - 14, 28, 28, 5); ctx.fill();
+        ctx.fillStyle = p.closed ? '#22c55e' : '#ef4444';
+        ctx.beginPath(); ctx.arc(mx, my, 7, 0, Math.PI * 2); ctx.fill();
+      } else if (p.type.startsWith('led-')) {
+        const colMap = { 'led-red': '#ef4444', 'led-green': '#22c55e', 'led-blue': '#3b82f6' };
+        const cHex = colMap[p.type];
+        ctx.strokeStyle = '#64748b'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        if (p.lit) {
+          ctx.shadowColor = cHex;
+          ctx.shadowBlur = 22;
+        }
+        ctx.fillStyle = p.lit ? cHex : '#475569';
+        ctx.beginPath(); ctx.arc(mx, my - 4, 11, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 1.5; ctx.stroke();
+      } else if (p.type === 'buz') {
+        ctx.strokeStyle = '#64748b'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.fillStyle = p.lit ? '#f59e0b' : '#1e293b';
+        ctx.beginPath(); ctx.arc(mx, my, 15, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath(); ctx.arc(mx, my, 4, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+
+  function nearestHole(px, py) {
+    let best = null, bestD = 16;
+    for (let c = 0; c < COLS; c++) {
+      for (const r of ROWS) {
+        const h = holePos(c, r);
+        const d = Math.hypot(px - h.x, py - h.y);
+        if (d < bestD) { bestD = d; best = { c, r }; }
+      }
+    }
+    return best;
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+    // Check if clicking an existing switch or deleting
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
+      const a = holePos(p.c1, p.r1), b = holePos(p.c2, p.r2);
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      if (Math.hypot(px - mx, py - my) < 18) {
+        if (tool === 'del') { parts.splice(i, 1); drawBoard(); return; }
+        if (p.type === 'sw') { p.closed = !p.closed; drawBoard(); return; }
+      }
+    }
+
+    const hole = nearestHole(px, py);
+    if (!hole || tool === 'del') { pendingHole = null; drawBoard(); return; }
+
+    if (!pendingHole) {
+      pendingHole = hole;
+    } else if (pendingHole.c !== hole.c || pendingHole.r !== hole.r) {
+      const wireCols = ['#ef4444','#3b82f6','#22c55e','#f59e0b','#a855f7'];
+      parts.push({
+        type: tool,
+        c1: pendingHole.c, r1: pendingHole.r,
+        c2: hole.c, r2: hole.r,
+        closed: true,
+        lit: false,
+        color: wireCols[parts.length % wireCols.length]
+      });
+      pendingHole = null;
+    } else {
+      pendingHole = null;
+    }
+    drawBoard();
+  });
+
+  document.querySelectorAll('.tool').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tool').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      tool = btn.dataset.t;
+      pendingHole = null;
+      drawBoard();
+    });
+  });
+
+  document.getElementById('pwrBtn').addEventListener('click', (e) => {
+    powerOn = !powerOn;
+    e.target.textContent = powerOn ? '5V Power: ON' : '5V Power: OFF';
+    e.target.classList.toggle('active', powerOn);
+    drawBoard();
+  });
+
+  document.getElementById('soundBtn').addEventListener('click', (e) => {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      buzOsc = audioCtx.createOscillator();
+      buzOsc.type = 'square';
+      buzOsc.frequency.value = 440;
+      buzGain = audioCtx.createGain();
+      buzGain.gain.value = 0;
+      buzOsc.connect(buzGain); buzGain.connect(audioCtx.destination);
+      buzOsc.start();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    soundOn = !soundOn;
+    e.target.textContent = soundOn ? 'Audio: On' : 'Audio: Off';
+    e.target.classList.toggle('active', soundOn);
+    drawBoard();
+  });
+
+  function loadDemo() {
+    parts = [
+      { type: 'wire', c1: 2, r1: '+top', c2: 2, r2: 'a', color: '#ef4444' },
+      { type: 'sw', c1: 2, r1: 'e', c2: 2, r2: 'f', closed: true },
+      { type: 'res', c1: 2, r1: 'g', c2: 6, r2: 'g' },
+      { type: 'led-green', c1: 6, r1: 'h', c2: 10, r2: 'h', lit: false },
+      { type: 'wire', c1: 10, r1: 'j', c2: 10, r2: '-top', color: '#3b82f6' },
+      { type: 'wire', c1: 14, r1: '+top', c2: 14, r2: 'b', color: '#f59e0b' },
+      { type: 'led-red', c1: 14, r1: 'c', c2: 18, r2: 'c', lit: false },
+      { type: 'wire', c1: 18, r1: 'a', c2: 18, r2: '-top', color: '#3b82f6' }
+    ];
+    drawBoard();
+  }
+
+  document.getElementById('demoBtn').addEventListener('click', loadDemo);
+  loadDemo();
+})();
+</script>
+</body>
+</html>

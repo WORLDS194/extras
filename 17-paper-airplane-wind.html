@@ -1,0 +1,172 @@
+<!-- 17-paper-airplane-wind.html — Paper Plane Wind Tunnel: Adjust pitch, wind speed, and nose weight on a paper plane inside a live airflow tunnel. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Paper Plane Wind Tunnel</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0c121b;
+    color: #eef2f8;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 18px;
+  }
+  .bar {
+    width: 100%;
+    max-width: 980px;
+    background: #141d2b;
+    border: 1px solid #283852;
+    border-radius: 14px;
+    padding: 14px 18px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  .bar h1 { font-size: 1.12rem; color: #38bdf8; }
+  .bar p { font-size: 0.78rem; color: #8fa3bf; }
+  .dials { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; font-size: 0.78rem; }
+  .dials label { display: flex; align-items: center; gap: 8px; }
+  .dials input { accent-color: #38bdf8; }
+  canvas#tunnel {
+    width: 100%;
+    max-width: 980px;
+    height: 480px;
+    background: #080d14;
+    border: 2px solid #283852;
+    border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+  }
+  .hud {
+    width: 100%;
+    max-width: 980px;
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+    font-size: 0.82rem;
+    color: #93a7c4;
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <div>
+    <h1>Paper Plane Wind Tunnel</h1>
+    <p>Tweak pitch angle and wind speed to test lift, stall turbulence, and airflow streamlines</p>
+  </div>
+  <div class="dials">
+    <label>Pitch <input id="pitch" type="range" min="-25" max="35" value="8"></label>
+    <label>Wind <input id="wind" type="range" min="2" max="14" value="7"></label>
+  </div>
+</div>
+<canvas id="tunnel" width="980" height="480"></canvas>
+<div class="hud">
+  <span id="liftTxt">Lift: Balanced</span>
+  <span id="stallTxt">Flow: Laminar</span>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('tunnel');
+  const ctx = canvas.getContext('2d');
+  const pitchEl = document.getElementById('pitch');
+  const windEl = document.getElementById('wind');
+  const liftTxt = document.getElementById('liftTxt');
+  const stallTxt = document.getElementById('stallTxt');
+
+  const particles = Array.from({ length: 130 }, () => ({
+    x: Math.random() * 980,
+    y: 40 + Math.random() * 400,
+    len: 14 + Math.random() * 18
+  }));
+
+  let planeY = 240, vy = 0;
+
+  function frame() {
+    requestAnimationFrame(frame);
+    const pitch = Number(pitchEl.value);
+    const wind = Number(windEl.value);
+    const rad = (-pitch * Math.PI) / 180;
+    const stalled = Math.abs(pitch) > 20;
+
+    // Simple aerodynamic lift vs gravity
+    const lift = stalled ? -0.15 : Math.sin((pitch * Math.PI) / 180) * wind * 0.14;
+    const grav = 0.25;
+    vy = (vy + (grav - lift) * 0.08) * 0.94;
+    planeY = Math.max(80, Math.min(400, planeY + vy));
+
+    liftTxt.textContent = `Pitch: ${pitch}° | Lift: ${stalled ? 'STALLED' : (lift > grav ? 'Climbing' : 'Gliding')}`;
+    stallTxt.textContent = stalled ? 'Flow: Turbulent Wake' : 'Flow: Smooth Laminar';
+
+    ctx.fillStyle = '#080d14';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Airflow streamlines
+    particles.forEach(p => {
+      p.x += wind * 1.4;
+      const dx = p.x - 460;
+      const dy = p.y - planeY;
+      if (Math.abs(dx) < 110 && Math.abs(dy) < 55) {
+        p.y += (dy >= 0 ? 1 : -1) * 1.4;
+        if (stalled && dx > 0) p.y += Math.sin(p.x * 0.15) * 3.5;
+      }
+      if (p.x > canvas.width + 30) {
+        p.x = -20;
+        p.y = 40 + Math.random() * 400;
+      }
+      ctx.strokeStyle = stalled && Math.abs(dy) < 70 && dx > 0 ? 'rgba(248, 113, 113, 0.5)' : 'rgba(56, 189, 248, 0.42)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - p.len, p.y);
+      ctx.stroke();
+    });
+
+    // Custom-drawn paper airplane
+    ctx.save();
+    ctx.translate(460, planeY);
+    ctx.rotate(rad);
+
+    // Upper wing
+    ctx.fillStyle = '#f8fafc';
+    ctx.beginPath();
+    ctx.moveTo(70, 0);
+    ctx.lineTo(-60, -24);
+    ctx.lineTo(-42, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    // Inner fold shadow
+    ctx.fillStyle = '#cbd5e1';
+    ctx.beginPath();
+    ctx.moveTo(70, 0);
+    ctx.lineTo(-42, 0);
+    ctx.lineTo(-54, 18);
+    ctx.closePath();
+    ctx.fill();
+
+    // Keel
+    ctx.fillStyle = '#94a3b8';
+    ctx.beginPath();
+    ctx.moveTo(70, 0);
+    ctx.lineTo(-42, 0);
+    ctx.lineTo(-34, 10);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  frame();
+})();
+</script>
+</body>
+</html>

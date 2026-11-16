@@ -1,0 +1,225 @@
+<!-- 20-lava-wax-lamp.html — Molten Wax Lava Lamp: A smooth metaball convection lava lamp inside a custom glass-and-metal housing. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Molten Wax Lava Lamp</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(circle at 50% 25%, #191426 0%, #09080f 75%);
+    color: #f1effa;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .studio {
+    display: grid;
+    grid-template-columns: 280px 260px;
+    gap: 28px;
+    align-items: center;
+    background: #14121f;
+    border: 1px solid #2b2640;
+    border-radius: 22px;
+    padding: 26px;
+    box-shadow: 0 28px 70px rgba(0,0,0,0.65);
+  }
+  @media (max-width: 640px) { .studio { grid-template-columns: 1fr; } }
+  .lamp-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .cap {
+    width: 96px;
+    height: 36px;
+    background: linear-gradient(90deg, #4b5563, #d1d5db, #4b5563);
+    border-radius: 12px 12px 2px 2px;
+    border: 2px solid #374151;
+  }
+  .glass-tube {
+    width: 210px;
+    height: 360px;
+    position: relative;
+    overflow: hidden;
+    border-left: 3px solid rgba(255,255,255,0.22);
+    border-right: 3px solid rgba(255,255,255,0.22);
+    background: #0d0b18;
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.7);
+  }
+  canvas#lava {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: pointer;
+  }
+  .base {
+    width: 170px;
+    height: 54px;
+    background: linear-gradient(90deg, #374151, #9ca3af, #374151);
+    border-radius: 4px 4px 18px 18px;
+    border: 2px solid #1f2937;
+  }
+  .panel { display: flex; flex-direction: column; gap: 14px; }
+  .panel h1 { font-size: 1.2rem; color: #fb7185; }
+  .panel p { font-size: 0.8rem; color: #9c96b8; line-height: 1.45; }
+  label { display: flex; flex-direction: column; gap: 6px; font-size: 0.8rem; color: #c4bede; }
+  input, select, button {
+    background: #201c33;
+    color: #f1effa;
+    border: 1px solid #383157;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+  button { cursor: pointer; }
+  button.on { background: #fb7185; color: #26050d; border-color: #fb7185; }
+</style>
+</head>
+<body>
+<div class="studio">
+  <div class="lamp-wrap">
+    <div class="cap"></div>
+    <div class="glass-tube">
+      <canvas id="lava" width="105" height="180"></canvas>
+    </div>
+    <div class="base"></div>
+  </div>
+
+  <div class="panel">
+    <div>
+      <h1>Molten Wax Lava Lamp</h1>
+      <p>Click the glass to nudge the wax blobs, adjust bulb heat, or switch wax palettes.</p>
+    </div>
+    <label>Wax Palette
+      <select id="palSel">
+        <option value="sunset">Sunset Coral</option>
+        <option value="toxic">Electric Lime</option>
+        <option value="ocean">Deep Biolume</option>
+      </select>
+    </label>
+    <label>Bulb Heat
+      <input id="heat" type="range" min="1" max="10" value="5">
+    </label>
+    <button id="humBtn">Lamp Hum: Off</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('lava');
+  const ctx = canvas.getContext('2d');
+  const palSel = document.getElementById('palSel');
+  const heatEl = document.getElementById('heat');
+  const humBtn = document.getElementById('humBtn');
+
+  const PALS = {
+    sunset: { bg: [24, 10, 32], wax: [251, 113, 133], hot: [253, 224, 71] },
+    toxic: { bg: [8, 24, 18], wax: [74, 222, 128], hot: [190, 242, 100] },
+    ocean: { bg: [8, 16, 36], wax: [56, 189, 248], hot: [167, 139, 250] }
+  };
+
+  const blobs = Array.from({ length: 7 }, (_, i) => ({
+    x: 22 + Math.random() * 61,
+    y: 30 + i * 20,
+    vx: (Math.random() - 0.5) * 0.3,
+    vy: (Math.random() - 0.5) * 0.4,
+    r: 13 + Math.random() * 11
+  }));
+
+  let audioCtx = null, osc = null, gain = null, humOn = false;
+
+  function step() {
+    requestAnimationFrame(step);
+    const heat = Number(heatEl.value) * 0.08;
+    const w = canvas.width, h = canvas.height;
+
+    blobs.forEach(b => {
+      // Convection: warm at bottom rises, cool at top sinks
+      const temp = (b.y / h) - 0.5;
+      b.vy -= temp * 0.025 * heat;
+      b.vx += Math.sin(performance.now() * 0.001 + b.y * 0.05) * 0.008;
+
+      b.vx *= 0.985;
+      b.vy *= 0.985;
+      b.x += b.vx;
+      b.y += b.vy;
+
+      if (b.x < b.r) { b.x = b.r; b.vx *= -0.7; }
+      if (b.x > w - b.r) { b.x = w - b.r; b.vx *= -0.7; }
+      if (b.y < b.r) { b.y = b.r; b.vy *= -0.5; }
+      if (b.y > h - b.r) { b.y = h - b.r; b.vy *= -0.5; }
+    });
+
+    const img = ctx.createImageData(w, h);
+    const d = img.data;
+    const pal = PALS[palSel.value];
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let sum = 0;
+        for (let i = 0; i < blobs.length; i++) {
+          const b = blobs[i];
+          const dx = x - b.x, dy = y - b.y;
+          sum += (b.r * b.r) / (dx * dx + dy * dy + 1);
+        }
+        const idx = (y * w + x) * 4;
+        if (sum > 1.05) {
+          const t = Math.min(1, (sum - 1.05) * 1.4);
+          d[idx] = pal.wax[0] + (pal.hot[0] - pal.wax[0]) * t;
+          d[idx+1] = pal.wax[1] + (pal.hot[1] - pal.wax[1]) * t;
+          d[idx+2] = pal.wax[2] + (pal.hot[2] - pal.wax[2]) * t;
+          d[idx+3] = 255;
+        } else {
+          d[idx] = pal.bg[0];
+          d[idx+1] = pal.bg[1];
+          d[idx+2] = pal.bg[2];
+          d[idx+3] = 255;
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    const r = canvas.getBoundingClientRect();
+    const px = ((e.clientX - r.left) / r.width) * canvas.width;
+    const py = ((e.clientY - r.top) / r.height) * canvas.height;
+    blobs.forEach(b => {
+      const dx = b.x - px, dy = b.y - py;
+      const dist = Math.hypot(dx, dy) + 1;
+      if (dist < 45) {
+        b.vx += (dx / dist) * 1.6;
+        b.vy += (dy / dist) * 1.6;
+      }
+    });
+  });
+
+  humBtn.addEventListener('click', () => {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      osc = audioCtx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = 60;
+      gain = audioCtx.createGain();
+      gain.gain.value = 0;
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    humOn = !humOn;
+    humBtn.textContent = humOn ? 'Lamp Hum: On' : 'Lamp Hum: Off';
+    humBtn.classList.toggle('on', humOn);
+    gain.gain.setTargetAtTime(humOn ? 0.035 : 0, audioCtx.currentTime, 0.06);
+  });
+
+  step();
+})();
+</script>
+</body>
+</html>

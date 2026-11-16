@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>x86 tiny asm</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0b0e14;color:#d8dee9;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;padding:20px;display:flex;justify-content:center}
+  .app{width:100%;max-width:860px;display:grid;grid-template-columns:1.2fr 1fr;gap:16px}
+  @media(max-width:720px){.app{grid-template-columns:1fr}}
+  .panel{background:#121722;border:1px solid #242c3d;border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:10px}
+  h1{font-size:15px;color:#88c0d0;grid-column:1/-1}
+  textarea{width:100%;height:260px;background:#0d1017;color:#a3be8c;border:1px solid #242c3d;border-radius:6px;padding:10px;font:inherit;font-size:13px;line-height:1.5;resize:vertical}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  button{background:#1b2232;color:#e5e9f0;border:1px solid #2e384d;padding:6px 11px;border-radius:5px;font:inherit;font-size:12px;cursor:pointer}
+  button:hover{border-color:#88c0d0}
+  .regs{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  .reg{background:#0d1017;border:1px solid #242c3d;border-radius:5px;padding:8px;display:flex;justify-content:space-between;font-size:12px}
+  .reg span:first-child{color:#81a1c1}
+  .stack{background:#0d1017;border:1px solid #242c3d;border-radius:5px;padding:8px;min-height:120px;font-size:12px;display:flex;flex-direction:column;gap:4px}
+  .status{font-size:12px;color:#ebcb8b}
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>x86 tiny asm sandbox</h1>
+  <div class="panel">
+    <div class="row">
+      <button id="step">step</button>
+      <button id="run">run</button>
+      <button id="reset">reset</button>
+      <button id="demo1">fib demo</button>
+      <button id="demo2">stack demo</button>
+    </div>
+    <textarea id="code"></textarea>
+    <div class="status" id="status">ready</div>
+  </div>
+  <div class="panel">
+    <div class="regs" id="regs"></div>
+    <div style="font-size:12px;color:#81a1c1">stack (top first)</div>
+    <div class="stack" id="stack"></div>
+  </div>
+</div>
+<script>
+const DEMOS = {
+  fib: `; compute 7th fibonacci in rax
+mov rax, 0
+mov rbx, 1
+mov rcx, 7
+loop:
+add rax, rbx
+xchg rax, rbx
+dec rcx
+cmp rcx, 0
+jne loop
+hlt`,
+  stack: `; push, pop, and arithmetic
+mov rax, 42
+mov rbx, 8
+push rax
+push rbx
+pop rcx
+pop rdx
+add rcx, rdx
+sub rcx, 10
+hlt`
+};
+
+const codeEl = document.getElementById('code');
+const statusEl = document.getElementById('status');
+let state, lines, labels;
+
+function init(){
+  state = { rax:0, rbx:0, rcx:0, rdx:0, rsp:0x1000, rip:0, zf:0, stack:[], halted:false };
+  lines = [];
+  labels = {};
+  const raw = codeEl.value.split('\n');
+  raw.forEach(l => {
+    const clean = l.split(';')[0].trim();
+    if(!clean) return;
+    if(clean.endsWith(':')){
+      labels[clean.slice(0,-1).toLowerCase()] = lines.length;
+    } else {
+      lines.push(clean);
+    }
+  });
+  statusEl.textContent = `loaded ${lines.length} instructions`;
+  render();
+}
+
+function val(tok){
+  const t = tok.toLowerCase();
+  if(t in state) return state[t];
+  const n = Number(t);
+  if(Number.isNaN(n)) throw new Error(`bad operand: ${tok}`);
+  return n|0;
+}
+
+function step(){
+  if(state.halted || state.rip >= lines.length){ state.halted = true; statusEl.textContent = 'halted'; return; }
+  const line = lines[state.rip];
+  const parts = line.replace(/,/g,' ').trim().split(/\s+/);
+  const op = parts[0].toLowerCase();
+  const a = parts[1], b = parts[2];
+  let nextRip = state.rip + 1;
+  try {
+    if(op==='mov') state[a.toLowerCase()] = val(b);
+    else if(op==='add') state[a.toLowerCase()] += val(b);
+    else if(op==='sub') state[a.toLowerCase()] -= val(b);
+    else if(op==='inc') state[a.toLowerCase()] += 1;
+    else if(op==='dec') state[a.toLowerCase()] -= 1;
+    else if(op==='xchg'){ const ka=a.toLowerCase(), kb=b.toLowerCase(); [state[ka],state[kb]]=[state[kb],state[ka]]; }
+    else if(op==='push'){ state.stack.unshift(val(a)); state.rsp -= 8; }
+    else if(op==='pop'){ if(!state.stack.length) throw new Error('stack underflow'); state[a.toLowerCase()] = state.stack.shift(); state.rsp += 8; }
+    else if(op==='cmp'){ state.zf = (val(a) === val(b)) ? 1 : 0; }
+    else if(op==='jmp'){ nextRip = labels[a.toLowerCase()]; }
+    else if(op==='je'){ if(state.zf) nextRip = labels[a.toLowerCase()]; }
+    else if(op==='jne'){ if(!state.zf) nextRip = labels[a.toLowerCase()]; }
+    else if(op==='hlt'){ state.halted = true; }
+    else throw new Error(`unknown op: ${op}`);
+    state.rip = nextRip;
+    statusEl.textContent = state.halted ? `halted at ${line}` : `executed: ${line}`;
+  } catch(err){
+    state.halted = true;
+    statusEl.textContent = `error: ${err.message}`;
+  }
+  render();
+}
+
+function render(){
+  const keys = ['rax','rbx','rcx','rdx','rsp','rip','zf'];
+  document.getElementById('regs').innerHTML = keys.map(k =>
+    `<div class="reg"><span>${k}</span><span>${state[k]} (0x${(state[k]>>>0).toString(16)})</span></div>`
+  ).join('');
+  document.getElementById('stack').innerHTML = state.stack.length
+    ? state.stack.map((v,i)=>`<div>[${i}] ${v}</div>`).join('')
+    : '<div style="color:#4c566a">empty</div>';
+}
+
+codeEl.value = DEMOS.fib;
+init();
+document.getElementById('reset').onclick = init;
+document.getElementById('step').onclick = step;
+document.getElementById('run').onclick = () => {
+  init();
+  let guard = 0;
+  while(!state.halted && guard++ < 500) step();
+};
+document.getElementById('demo1').onclick = () => { codeEl.value = DEMOS.fib; init(); };
+document.getElementById('demo2').onclick = () => { codeEl.value = DEMOS.stack; init(); };
+</script>
+</body>
+</html>

@@ -1,0 +1,386 @@
+<!-- 03-focus-terrarium.html — Terrarium Pomodoro & Ambient Mixer: A focus timer with procedural Web Audio soundscapes and a growing SVG glass terrarium. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terrarium Pomodoro & Ambient Mixer</title>
+<style>
+  :root {
+    --bg: #0c1412;
+    --card: #131f1c;
+    --border: #233832;
+    --text: #e9f2ee;
+    --muted: #84a096;
+    --leaf: #4ade80;
+    --amber: #f59e0b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(circle at 50% 0%, #152822 0%, var(--bg) 70%);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .shell {
+    width: 100%;
+    max-width: 920px;
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 20px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 22px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+  }
+  @media (max-width: 780px) { .shell { grid-template-columns: 1fr; } }
+  .jar-panel {
+    background: #0d1614;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .stats-pill {
+    font-size: 0.78rem;
+    color: var(--muted);
+    background: #142420;
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 999px;
+    margin-top: 8px;
+  }
+  .right-panel {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 18px;
+  }
+  h1 { font-size: 1.25rem; font-weight: 700; }
+  .sub { font-size: 0.83rem; color: var(--muted); margin-top: 3px; }
+  .timer-box {
+    background: #0e1815;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px;
+    text-align: center;
+  }
+  .mode-tabs { display: flex; justify-content: center; gap: 8px; margin-bottom: 12px; }
+  .tab {
+    background: #162621;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .tab.active { background: var(--leaf); color: #072011; border-color: var(--leaf); }
+  .clock {
+    font-size: 3.4rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
+    margin: 6px 0 14px;
+  }
+  .timer-btns { display: flex; justify-content: center; gap: 10px; }
+  button.ctrl {
+    background: #1b2f29;
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 9px 18px;
+    border-radius: 10px;
+    font-size: 0.86rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  button.ctrl.primary { background: var(--leaf); color: #062111; border-color: var(--leaf); }
+  .mixer {
+    background: #0e1815;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+  }
+  .mixer-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .mixer-head span { font-size: 0.88rem; font-weight: 700; }
+  .mix-row {
+    display: grid;
+    grid-template-columns: 95px 1fr 38px;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .mix-row:last-child { margin-bottom: 0; }
+  .mix-row input { accent-color: var(--leaf); }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="jar-panel">
+    <!-- Custom-drawn SVG Glass Terrarium -->
+    <svg id="terrarium" width="290" height="330" viewBox="0 0 290 330">
+      <defs>
+        <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#ffffff" stop-opacity="0.16"/>
+          <stop offset="50%" stop-color="#ffffff" stop-opacity="0.02"/>
+          <stop offset="100%" stop-color="#4ade80" stop-opacity="0.08"/>
+        </linearGradient>
+        <linearGradient id="soil" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#3b2b22"/>
+          <stop offset="100%" stop-color="#1e1510"/>
+        </linearGradient>
+      </defs>
+      <!-- Cork lid -->
+      <rect x="92" y="16" width="106" height="22" rx="6" fill="#9a6b42" stroke="#6c4829" stroke-width="2"/>
+      <!-- Jar body -->
+      <path d="M84 38 L206 38 L236 92 L236 286 Q236 308 212 308 L78 308 Q54 308 54 286 L54 92 Z" fill="url(#glass)" stroke="#4c7a6b" stroke-width="2.5"/>
+      <!-- Pebble & soil layers -->
+      <path d="M56 268 L234 268 L234 286 Q234 306 212 306 L78 306 Q56 306 56 286 Z" fill="#2a2f33"/>
+      <path d="M56 238 Q110 230 145 238 T234 236 L234 272 L56 272 Z" fill="url(#soil)"/>
+      <!-- Moss -->
+      <path d="M58 238 Q90 225 125 235 T195 232 T232 236 L232 246 L58 246 Z" fill="#2d6a4f"/>
+      <!-- Dynamic plants group -->
+      <g id="plantsLayer"></g>
+      <!-- Glass highlight -->
+      <path d="M72 95 L72 260" stroke="#ffffff" stroke-opacity="0.22" stroke-width="4" stroke-linecap="round"/>
+    </svg>
+    <div class="stats-pill" id="growthLabel">Growth Stage: 1 / 5 (Seedling)</div>
+  </div>
+
+  <div class="right-panel">
+    <div>
+      <h1>Terrarium Pomodoro &amp; Ambient Mixer</h1>
+      <p class="sub">Complete focus blocks to grow your terrarium while mixing procedural Web Audio soundscapes</p>
+    </div>
+
+    <div class="timer-box">
+      <div class="mode-tabs">
+        <button class="tab active" data-mins="25">Focus 25m</button>
+        <button class="tab" data-mins="5">Break 5m</button>
+        <button class="tab" data-mins="15">Long 15m</button>
+      </div>
+      <div class="clock" id="clock">25:00</div>
+      <div class="timer-btns">
+        <button class="ctrl primary" id="startBtn">Start Focus</button>
+        <button class="ctrl" id="resetBtn">Reset</button>
+        <button class="ctrl" id="sproutBtn">+1 Growth (Test)</button>
+      </div>
+    </div>
+
+    <div class="mixer">
+      <div class="mixer-head">
+        <span>Ambient Soundscape Mixer</span>
+        <button class="ctrl" id="audioToggle" style="padding:5px 12px;font-size:0.78rem;">Audio: Muted</button>
+      </div>
+      <div class="mix-row">
+        <label for="rain">Soft Rain</label>
+        <input id="rain" type="range" min="0" max="100" value="45">
+        <span id="rainV">45%</span>
+      </div>
+      <div class="mix-row">
+        <label for="wind">Forest Wind</label>
+        <input id="wind" type="range" min="0" max="100" value="30">
+        <span id="windV">30%</span>
+      </div>
+      <div class="mix-row">
+        <label for="fire">Warm Brown</label>
+        <input id="fire" type="range" min="0" max="100" value="25">
+        <span id="fireV">25%</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  let totalSec = 25 * 60, leftSec = totalSec, running = false, iv = null;
+  let growth = 1;
+  let ctx = null, muted = true;
+  let rainG = null, windG = null, fireG = null;
+
+  const clockEl = document.getElementById('clock');
+  const startBtn = document.getElementById('startBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const sproutBtn = document.getElementById('sproutBtn');
+  const audioToggle = document.getElementById('audioToggle');
+  const plantsLayer = document.getElementById('plantsLayer');
+  const growthLabel = document.getElementById('growthLabel');
+
+  const STAGES = ['Seedling', 'Fern Sprout', 'Mushroom Grove', 'Blossom Canopy', 'Lush Sanctuary'];
+
+  function renderPlants() {
+    let svg = '';
+    if (growth >= 1) {
+      svg += `<path d="M145 236 Q145 205 135 190" stroke="#52b788" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+              <ellipse cx="129" cy="189" rx="9" ry="5" transform="rotate(-25 129 189)" fill="#74c69d"/>
+              <ellipse cx="145" cy="196" rx="8" ry="4.5" transform="rotate(25 145 196)" fill="#52b788"/>`;
+    }
+    if (growth >= 2) {
+      svg += `<path d="M98 236 Q90 190 78 170" stroke="#40916c" stroke-width="3" fill="none" stroke-linecap="round"/>
+              <ellipse cx="76" cy="168" rx="11" ry="5" transform="rotate(-35 76 168)" fill="#52b788"/>
+              <ellipse cx="89" cy="188" rx="10" ry="4.5" transform="rotate(20 89 188)" fill="#74c69d"/>`;
+    }
+    if (growth >= 3) {
+      svg += `<rect x="184" y="212" width="6" height="24" rx="2" fill="#e9d8a6"/>
+              <path d="M172 214 Q187 195 202 214 Z" fill="#e76f51"/>
+              <circle cx="182" cy="208" r="2" fill="#fff"/>
+              <circle cx="192" cy="210" r="1.5" fill="#fff"/>`;
+    }
+    if (growth >= 4) {
+      svg += `<path d="M145 236 Q155 170 164 140" stroke="#2d6a4f" stroke-width="4" fill="none" stroke-linecap="round"/>
+              <circle cx="164" cy="136" r="10" fill="#f472b6"/>
+              <circle cx="164" cy="136" r="4" fill="#fde047"/>`;
+    }
+    if (growth >= 5) {
+      svg += `<circle cx="110" cy="145" r="2.5" fill="#fef08a" opacity="0.9"/>
+              <circle cx="196" cy="162" r="2.5" fill="#fef08a" opacity="0.9"/>
+              <circle cx="132" cy="118" r="2" fill="#fef08a" opacity="0.8"/>`;
+    }
+    plantsLayer.innerHTML = svg;
+    growthLabel.textContent = `Growth Stage: ${growth} / 5 (${STAGES[growth - 1]})`;
+  }
+
+  function fmt(s) {
+    const m = Math.floor(s / 60).toString().padStart(2, '0');
+    const sec = (s % 60).toString().padStart(2, '0');
+    return `${m}:${sec}`;
+  }
+
+  function makeNoiseBuffer(type) {
+    const len = ctx.sampleRate * 3;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    let lastOut = 0;
+    for (let i = 0; i < len; i++) {
+      const white = Math.random() * 2 - 1;
+      if (type === 'brown') {
+        data[i] = (lastOut + 0.02 * white) / 1.02;
+        lastOut = data[i];
+        data[i] *= 3.2;
+      } else {
+        data[i] = white;
+      }
+    }
+    return buf;
+  }
+
+  function initAudio() {
+    if (ctx) return;
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+    const makeChannel = (filterType, freq, noiseType) => {
+      const src = ctx.createBufferSource();
+      src.buffer = makeNoiseBuffer(noiseType);
+      src.loop = true;
+      const f = ctx.createBiquadFilter();
+      f.type = filterType;
+      f.frequency.value = freq;
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      src.connect(f); f.connect(g); g.connect(ctx.destination);
+      src.start();
+      return g;
+    };
+
+    rainG = makeChannel('bandpass', 1800, 'white');
+    windG = makeChannel('lowpass', 420, 'white');
+    fireG = makeChannel('lowpass', 240, 'brown');
+  }
+
+  function syncMix() {
+    if (!ctx) return;
+    const r = document.getElementById('rain').value / 100;
+    const w = document.getElementById('wind').value / 100;
+    const f = document.getElementById('fire').value / 100;
+    document.getElementById('rainV').textContent = Math.round(r*100) + '%';
+    document.getElementById('windV').textContent = Math.round(w*100) + '%';
+    document.getElementById('fireV').textContent = Math.round(f*100) + '%';
+    const mult = muted ? 0 : 0.25;
+    rainG.gain.setTargetAtTime(r * mult, ctx.currentTime, 0.05);
+    windG.gain.setTargetAtTime(w * mult, ctx.currentTime, 0.05);
+    fireG.gain.setTargetAtTime(f * mult * 1.4, ctx.currentTime, 0.05);
+  }
+
+  audioToggle.addEventListener('click', () => {
+    initAudio();
+    if (ctx.state === 'suspended') ctx.resume();
+    muted = !muted;
+    audioToggle.textContent = muted ? 'Audio: Muted' : 'Audio: Playing';
+    audioToggle.classList.toggle('primary', !muted);
+    syncMix();
+  });
+
+  ['rain','wind','fire'].forEach(id => {
+    document.getElementById(id).addEventListener('input', () => {
+      document.getElementById(id + 'V').textContent = document.getElementById(id).value + '%';
+      syncMix();
+    });
+  });
+
+  document.querySelectorAll('.tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      clearInterval(iv); iv = null; running = false;
+      startBtn.textContent = 'Start Focus';
+      totalSec = Number(btn.dataset.mins) * 60;
+      leftSec = totalSec;
+      clockEl.textContent = fmt(leftSec);
+    });
+  });
+
+  startBtn.addEventListener('click', () => {
+    if (running) {
+      clearInterval(iv); iv = null; running = false;
+      startBtn.textContent = 'Resume';
+    } else {
+      running = true;
+      startBtn.textContent = 'Pause';
+      iv = setInterval(() => {
+        leftSec--;
+        clockEl.textContent = fmt(leftSec);
+        if (leftSec <= 0) {
+          clearInterval(iv); iv = null; running = false;
+          startBtn.textContent = 'Start Focus';
+          growth = Math.min(5, growth + 1);
+          renderPlants();
+          leftSec = totalSec;
+          clockEl.textContent = fmt(leftSec);
+        }
+      }, 1000);
+    }
+  });
+
+  resetBtn.addEventListener('click', () => {
+    clearInterval(iv); iv = null; running = false;
+    startBtn.textContent = 'Start Focus';
+    leftSec = totalSec;
+    clockEl.textContent = fmt(leftSec);
+  });
+
+  sproutBtn.addEventListener('click', () => {
+    growth = (growth % 5) + 1;
+    renderPlants();
+  });
+
+  renderPlants();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>markov text mixer</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#101116;color:#e5e7eb;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;padding:24px;display:flex;justify-content:center}
+  .app{width:100%;max-width:780px;display:flex;flex-direction:column;gap:14px}
+  h1{font-size:18px;color:#fbbf24;font-weight:600}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  textarea{width:100%;height:150px;background:#171923;color:#e5e7eb;border:1px solid #2c3142;border-radius:8px;padding:12px;font:inherit;font-size:13px;resize:vertical}
+  button{background:#1d2130;color:#e5e7eb;border:1px solid #32394f;padding:7px 12px;border-radius:6px;font:inherit;font-size:12px;cursor:pointer}
+  button:hover{border-color:#fbbf24}
+  button.primary{background:#fbbf24;color:#111;border-color:#fbbf24;font-weight:600}
+  label{font-size:12px;color:#9ca3af;display:flex;align-items:center;gap:6px}
+  select,input[type=number]{background:#171923;color:#e5e7eb;border:1px solid #2c3142;border-radius:5px;padding:4px 8px;font:inherit;font-size:12px}
+  .out{background:#151821;border:1px solid #2c3142;border-radius:8px;padding:16px;min-height:110px;line-height:1.6;font-size:14px;white-space:pre-wrap}
+  .meta{font-size:11px;color:#6b7280}
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>markov text mixer</h1>
+  <div class="row">
+    <button data-preset="os">os devlog</button>
+    <button data-preset="recipe">chaos recipe</button>
+    <button data-preset="patch">patch notes</button>
+  </div>
+  <textarea id="corpus" placeholder="paste training text here..."></textarea>
+  <div class="row">
+    <label>order
+      <select id="order">
+        <option value="1">1 word</option>
+        <option value="2" selected>2 words</option>
+        <option value="3">3 words</option>
+      </select>
+    </label>
+    <label>length <input id="len" type="number" min="15" max="300" value="70"></label>
+    <button class="primary" id="gen">generate</button>
+    <button id="copy">copy</button>
+  </div>
+  <div class="out" id="out">hit generate to remix the corpus.</div>
+  <div class="meta" id="meta">states: 0</div>
+</div>
+<script>
+const PRESETS = {
+  os: `the bootloader jumped straight into long mode after mapping the first four megabytes of physical memory. interrupt descriptor tables love triple faulting whenever a stack pointer drifts by one byte. the kernel allocator splits free pages into clean blocks, while the shell waits for keyboard scancodes from ps2 port 0x60. every frame buffer pixel is just three bytes waiting for a good excuse to draw a window.`,
+  recipe: `preheat the skillet until a drop of water dances across the iron. butter two slices of sourdough, layer sharp cheddar with a thin swipe of hot sauce, and press gently with a spatula. never rush the toast. flip once the crust turns amber and listen for the crunch. serve immediately before the cheese cools down.`,
+  patch: `fixed a rare bug where gravity inverted inside the physics sandbox after frame 4096. reduced memory overhead by 42 percent when loading custom sprite sheets. added experimental support for negative frequencies in the audio engine, though headphones are strongly advised. removed an unused debug button that somehow opened three extra tabs.`
+};
+
+const corpusEl = document.getElementById('corpus');
+const outEl = document.getElementById('out');
+const metaEl = document.getElementById('meta');
+corpusEl.value = PRESETS.os + '\n' + PRESETS.patch;
+
+document.querySelectorAll('[data-preset]').forEach(b => {
+  b.onclick = () => { corpusEl.value = PRESETS[b.dataset.preset]; buildAndGen(); };
+});
+
+function train(text, n){
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const chain = new Map();
+  if(words.length <= n) return {chain, words};
+  for(let i=0;i<=words.length-n-1;i++){
+    const key = words.slice(i, i+n).join(' ');
+    const next = words[i+n];
+    if(!chain.has(key)) chain.set(key, []);
+    chain.get(key).push(next);
+  }
+  return {chain, words};
+}
+
+function generate(text, n, maxWords){
+  const {chain, words} = train(text, n);
+  metaEl.textContent = `states: ${chain.size} | tokens: ${words.length}`;
+  if(chain.size === 0) return 'not enough text for that n-gram order.';
+  const keys = [...chain.keys()];
+  const starters = keys.filter(k => /^[a-z0-9]/.test(k));
+  let cur = (starters.length ? starters : keys)[Math.random() * keys.length | 0];
+  const res = cur.split(' ');
+  for(let i=0;i<maxWords;i++){
+    const opts = chain.get(cur);
+    if(!opts || !opts.length){
+      cur = keys[Math.random() * keys.length | 0];
+      continue;
+    }
+    const next = opts[Math.random() * opts.length | 0];
+    res.push(next);
+    cur = res.slice(res.length - n).join(' ');
+  }
+  return res.join(' ');
+}
+
+function buildAndGen(){
+  const n = +document.getElementById('order').value;
+  const len = +document.getElementById('len').value || 60;
+  outEl.textContent = generate(corpusEl.value, n, len);
+}
+
+document.getElementById('gen').onclick = buildAndGen;
+document.getElementById('copy').onclick = () => navigator.clipboard.writeText(outEl.textContent);
+buildAndGen();
+</script>
+</body>
+</html>

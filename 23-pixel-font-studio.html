@@ -1,0 +1,169 @@
+<!-- 23-pixel-font-studio.html — Bitmap Font & Banner Maker: Render custom retro pixel banners with 3D drop shadows, gradients, and PNG export. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bitmap Font & Banner Maker</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0f111a;
+    color: #eef2f8;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .card {
+    width: 100%;
+    max-width: 920px;
+    background: #171a26;
+    border: 1px solid #2d344a;
+    border-radius: 18px;
+    padding: 22px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+  }
+  h1 { font-size: 1.2rem; color: #38e4ae; }
+  .sub { font-size: 0.8rem; color: #8c96ad; margin: 3px 0 16px; }
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 140px 140px 140px auto;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 780px) { .controls { grid-template-columns: 1fr 1fr; } }
+  input, select, button {
+    background: #212638;
+    color: #fff;
+    border: 1px solid #36405c;
+    border-radius: 8px;
+    padding: 9px 12px;
+    font-size: 0.84rem;
+    font-weight: 600;
+  }
+  button { background: #38e4ae; color: #071c15; border-color: #38e4ae; cursor: pointer; }
+  .stage {
+    background: #0a0c12;
+    border: 1px solid #2a3147;
+    border-radius: 14px;
+    padding: 18px;
+    display: flex;
+    justify-content: center;
+    overflow-x: auto;
+  }
+  canvas#banner { image-rendering: pixelated; max-width: 100%; height: auto; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Bitmap Font &amp; Banner Maker</h1>
+  <p class="sub">Type any text to render a crisp 5×7 pixel-art banner with retro 3D shading and PNG export</p>
+
+  <div class="controls">
+    <input id="txt" type="text" value="LEVEL UP!" maxlength="18" placeholder="Type banner text...">
+    <select id="styleSel">
+      <option value="arcade">Arcade Gold</option>
+      <option value="cyber">Cyber Mint</option>
+      <option value="lava">Lava Ember</option>
+    </select>
+    <select id="scaleSel">
+      <option value="6">Scale: 6px</option>
+      <option value="8" selected>Scale: 8px</option>
+      <option value="10">Scale: 10px</option>
+    </select>
+    <select id="bgSel">
+      <option value="dark">Dark Slate</option>
+      <option value="trans">Transparent</option>
+    </select>
+    <button id="dlBtn">Download PNG</button>
+  </div>
+
+  <div class="stage">
+    <canvas id="banner" width="760" height="160"></canvas>
+  </div>
+</div>
+
+<script>
+(() => {
+  // 5x7 compact bitmap font (each char = 7 rows of 5-bit masks)
+  const FONT = {
+    'A':[14,17,17,31,17,17,17],'B':[30,17,17,30,17,17,30],'C':[14,17,16,16,16,17,14],
+    'D':[30,17,17,17,17,17,30],'E':[31,16,16,30,16,16,31],'F':[31,16,16,30,16,16,16],
+    'G':[14,17,16,23,17,17,15],'H':[17,17,17,31,17,17,17],'I':[14,4,4,4,4,4,14],
+    'J':[7,2,2,2,2,18,12],'K':[17,18,20,24,20,18,17],'L':[16,16,16,16,16,16,31],
+    'M':[17,27,21,21,17,17,17],'N':[17,25,21,19,17,17,17],'O':[14,17,17,17,17,17,14],
+    'P':[30,17,17,30,16,16,16],'Q':[14,17,17,17,21,18,13],'R':[30,17,17,30,20,18,17],
+    'S':[15,16,16,14,1,1,30],'T':[31,4,4,4,4,4,4],'U':[17,17,17,17,17,17,14],
+    'V':[17,17,17,17,17,10,4],'W':[17,17,17,21,21,27,17],'X':[17,17,10,4,10,17,17],
+    'Y':[17,17,10,4,4,4,4],'Z':[31,1,2,4,8,16,31],'0':[14,17,19,21,25,17,14],
+    '1':[4,12,4,4,4,4,14],'2':[14,17,1,6,8,16,31],'3':[30,1,1,14,1,1,30],
+    '4':[2,6,10,18,31,2,2],'5':[31,16,30,1,1,17,14],'6':[14,16,16,30,17,17,14],
+    '7':[31,1,2,4,8,8,8],'8':[14,17,17,14,17,17,14],'9':[14,17,17,15,1,1,14],
+    '!':[4,4,4,4,4,0,4],'?':[14,17,1,2,4,0,4],'-':[0,0,0,31,0,0,0],
+    '+':[0,4,4,31,4,4,0],'.':[0,0,0,0,0,0,4],':':[0,0,4,0,0,4,0],' ':[0,0,0,0,0,0,0]
+  };
+
+  const PAL = {
+    arcade: { top: '#fef08a', mid: '#f59e0b', bot: '#b45309', shadow: '#451a03' },
+    cyber: { top: '#a7f3d0', mid: '#38e4ae', bot: '#047857', shadow: '#022c22' },
+    lava: { top: '#fecdd3', mid: '#fb7185', bot: '#be123c', shadow: '#4c0519' }
+  };
+
+  const canvas = document.getElementById('banner');
+  const ctx = canvas.getContext('2d');
+  const txt = document.getElementById('txt');
+  const styleSel = document.getElementById('styleSel');
+  const scaleSel = document.getElementById('scaleSel');
+  const bgSel = document.getElementById('bgSel');
+
+  function render() {
+    const str = (txt.value || ' ').toUpperCase();
+    const px = Number(scaleSel.value);
+    const pal = PAL[styleSel.value];
+    const pad = px * 3;
+    const w = Math.max(240, str.length * 6 * px + pad * 2);
+    const h = 7 * px + pad * 2;
+    canvas.width = w;
+    canvas.height = h;
+
+    ctx.clearRect(0, 0, w, h);
+    if (bgSel.value === 'dark') {
+      ctx.fillStyle = '#0a0c12';
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    const drawLayer = (ox, oy, colFn) => {
+      for (let ci = 0; ci < str.length; ci++) {
+        const glyph = FONT[str[ci]] || FONT[' '];
+        for (let r = 0; r < 7; r++) {
+          const row = glyph[r];
+          for (let c = 0; c < 5; c++) {
+            if ((row >> (4 - c)) & 1) {
+              ctx.fillStyle = colFn(r);
+              ctx.fillRect(pad + (ci * 6 + c) * px + ox, pad + r * px + oy, px, px);
+            }
+          }
+        }
+      }
+    };
+
+    drawLayer(px * 0.6, px * 0.6, () => pal.shadow);
+    drawLayer(0, 0, (r) => r < 2 ? pal.top : r < 5 ? pal.mid : pal.bot);
+  }
+
+  [txt, styleSel, scaleSel, bgSel].forEach(el => el.addEventListener('input', render));
+  document.getElementById('dlBtn').addEventListener('click', () => {
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = 'pixel-banner.png';
+    a.click();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

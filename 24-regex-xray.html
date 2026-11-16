@@ -1,0 +1,177 @@
+<!-- 24-regex-xray.html — Regex X-Ray & Live Tester: Test regular expressions with color-coded capture group highlights and token breakdowns. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Regex X-Ray & Live Tester</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0d1017;
+    color: #eef2f8;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .wrap {
+    width: 100%;
+    max-width: 960px;
+    background: #151924;
+    border: 1px solid #2b3247;
+    border-radius: 18px;
+    padding: 22px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+  }
+  h1 { font-size: 1.2rem; color: #60a5fa; }
+  .sub { font-size: 0.8rem; color: #8c96ad; margin: 3px 0 16px; }
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  button {
+    background: #202638;
+    color: #e2e8f0;
+    border: 1px solid #353f5c;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { border-color: #60a5fa; }
+  .regex-bar {
+    display: grid;
+    grid-template-columns: 1fr 90px;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  input, textarea {
+    background: #0c0f17;
+    color: #f8fafc;
+    border: 1px solid #2e364f;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.9rem;
+  }
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
+  .pane {
+    background: #0c0f17;
+    border: 1px solid #2b3247;
+    border-radius: 12px;
+    padding: 12px;
+    min-height: 220px;
+    font-family: ui-monospace, monospace;
+    font-size: 0.86rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .m0 { background: rgba(56, 228, 174, 0.28); border-bottom: 2px solid #38e4ae; border-radius: 3px; }
+  .m1 { background: rgba(96, 165, 250, 0.28); border-bottom: 2px solid #60a5fa; border-radius: 3px; }
+  .status { font-size: 0.8rem; color: #94a3b8; margin-top: 12px; display: flex; justify-content: space-between; }
+  .err { color: #f87171; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Regex X-Ray &amp; Live Tester</h1>
+  <p class="sub">Test regular expressions in real time with alternating match highlights and capture-group inspection</p>
+
+  <div class="presets">
+    <button data-re="([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})" data-fl="g">Email</button>
+    <button data-re="#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b" data-fl="g">Hex Color</button>
+    <button data-re="(\d{4})-(\d{2})-(\d{2})" data-fl="g">ISO Date</button>
+    <button data-re="\b\d{1,3}(\.\d{1,3}){3}\b" data-fl="g">IPv4</button>
+  </div>
+
+  <div class="regex-bar">
+    <input id="pattern" type="text" value="([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})" placeholder="Regex pattern">
+    <input id="flags" type="text" value="g" placeholder="flags">
+  </div>
+
+  <div class="split">
+    <textarea id="sample" rows="9">Reach out to brody@galaxyhit.com or team@example.org.
+Colors: #38e4ae, #ff5e5b, and #fff.
+Dates: 2026-11-15 and 2026-12-01. IP: 192.168.1.42</textarea>
+    <div class="pane" id="output"></div>
+  </div>
+
+  <div class="status">
+    <span id="matchStat">Matches: 0</span>
+    <span id="groupStat"></span>
+  </div>
+</div>
+
+<script>
+(() => {
+  const patEl = document.getElementById('pattern');
+  const flgEl = document.getElementById('flags');
+  const smpEl = document.getElementById('sample');
+  const outEl = document.getElementById('output');
+  const matchStat = document.getElementById('matchStat');
+  const groupStat = document.getElementById('groupStat');
+
+  function esc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function run() {
+    const p = patEl.value;
+    const f = flgEl.value;
+    const text = smpEl.value;
+    if (!p) {
+      outEl.innerHTML = esc(text);
+      matchStat.textContent = 'Matches: 0';
+      groupStat.textContent = '';
+      return;
+    }
+
+    let re;
+    try {
+      re = new RegExp(p, f.includes('g') ? f : f + 'g');
+    } catch (e) {
+      outEl.innerHTML = esc(text);
+      matchStat.innerHTML = `<span class="err">Invalid Regex: ${esc(e.message)}</span>`;
+      groupStat.textContent = '';
+      return;
+    }
+
+    let html = '', lastIdx = 0, count = 0, firstGroups = [];
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      if (m[0].length === 0) { re.lastIndex++; continue; }
+      html += esc(text.slice(lastIdx, m.index));
+      html += `<span class="m${count % 2}">${esc(m[0])}</span>`;
+      lastIdx = m.index + m[0].length;
+      if (count === 0 && m.length > 1) firstGroups = m.slice(1);
+      count++;
+      if (!f.includes('g')) break;
+    }
+    html += esc(text.slice(lastIdx));
+
+    outEl.innerHTML = html;
+    matchStat.textContent = `Matches: ${count}`;
+    groupStat.textContent = firstGroups.length ? `First match groups: [${firstGroups.join(', ')}]` : '';
+  }
+
+  document.querySelectorAll('.presets button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      patEl.value = btn.dataset.re;
+      flgEl.value = btn.dataset.fl;
+      run();
+    });
+  });
+
+  [patEl, flgEl, smpEl].forEach(el => el.addEventListener('input', run));
+  run();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,297 @@
+<!-- 22-rocket-launcher.html — Orbital Rocket Ship Launcher: Configure thrust, fuel, and launch angle, ignite engines, stage boosters, and deploy chutes. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbital Rocket Ship Launcher</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #070b14;
+    color: #eef2f8;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+  }
+  .mission {
+    width: 100%;
+    max-width: 1020px;
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 18px;
+    background: #101624;
+    border: 1px solid #26324d;
+    border-radius: 18px;
+    padding: 18px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.65);
+  }
+  @media (max-width: 820px) { .mission { grid-template-columns: 1fr; } }
+  .console { display: flex; flex-direction: column; gap: 12px; }
+  h1 { font-size: 1.15rem; color: #fb923c; }
+  .sub { font-size: 0.78rem; color: #8c9bb8; }
+  .telem {
+    background: #090d16;
+    border: 1px solid #24304a;
+    border-radius: 12px;
+    padding: 12px;
+    font-family: ui-monospace, monospace;
+    font-size: 0.8rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .telem div span { display: block; color: #7c8ba6; font-size: 0.68rem; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: #b4c0d6; }
+  input[type="range"] { accent-color: #fb923c; }
+  button {
+    background: #1d263b;
+    color: #eef2f8;
+    border: 1px solid #334266;
+    border-radius: 9px;
+    padding: 9px 12px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  button.launch { background: #ef4444; border-color: #f87171; color: #fff; font-size: 0.92rem; }
+  button.on { background: #38e4ae; border-color: #38e4ae; color: #071b14; }
+  canvas#sky {
+    width: 100%;
+    aspect-ratio: 700 / 520;
+    background: #060913;
+    border: 2px solid #24304a;
+    border-radius: 14px;
+  }
+</style>
+</head>
+<body>
+<div class="mission">
+  <div class="console">
+    <div>
+      <h1>Orbital Rocket Launcher</h1>
+      <p class="sub">Ignite boosters, separate stages mid-flight, and deploy recovery chutes</p>
+    </div>
+
+    <div class="telem">
+      <div><span>ALTITUDE</span><strong id="tAlt">0 m</strong></div>
+      <div><span>VELOCITY</span><strong id="tVel">0 m/s</strong></div>
+      <div><span>FUEL</span><strong id="tFuel">100%</strong></div>
+      <div><span>STAGE</span><strong id="tStage">PAD</strong></div>
+    </div>
+
+    <label>Thrust Power <input id="thrustR" type="range" min="14" max="32" value="22"></label>
+    <label>Tilt Angle <input id="tiltR" type="range" min="-20" max="20" value="4"></label>
+
+    <button id="launchBtn" class="launch">IGNITE &amp; LAUNCH</button>
+    <button id="stageBtn">Separate Stage 1</button>
+    <button id="chuteBtn">Deploy Parachute</button>
+    <button id="soundBtn">Engine Audio: Off</button>
+    <button id="resetBtn">Reset to Pad</button>
+  </div>
+  <canvas id="sky" width="700" height="520"></canvas>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('sky');
+  const ctx = canvas.getContext('2d');
+  const thrustR = document.getElementById('thrustR'), tiltR = document.getElementById('tiltR');
+  const tAlt = document.getElementById('tAlt'), tVel = document.getElementById('tVel'), tFuel = document.getElementById('tFuel'), tStage = document.getElementById('tStage');
+  const soundBtn = document.getElementById('soundBtn');
+
+  let state = 'PAD'; // PAD, FLYING, LANDED
+  let rx = 350, alt = 0, vx = 0, vy = 0, fuel = 100, stage = 1, chute = false;
+  let particles = [], spentBooster = null;
+  let audioCtx = null, soundOn = false, rumGain = null;
+
+  const STARS = Array.from({ length: 90 }, () => ({ x: Math.random() * 700, y: Math.random() * 520, r: Math.random() * 1.4 + 0.4 }));
+
+  function resetPad() {
+    state = 'PAD';
+    rx = 350; alt = 0; vx = 0; vy = 0; fuel = 100; stage = 1; chute = false;
+    particles = []; spentBooster = null;
+    if (rumGain && audioCtx) rumGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
+  }
+
+  function step() {
+    requestAnimationFrame(step);
+
+    const firing = state === 'FLYING' && fuel > 0;
+    if (state === 'FLYING') {
+      const ang = (Number(tiltR.value) * Math.PI) / 180;
+      if (firing) {
+        const power = Number(thrustR.value) * 0.015;
+        vx += Math.sin(ang) * power;
+        vy += Math.cos(ang) * power;
+        fuel = Math.max(0, fuel - (stage === 1 ? 0.24 : 0.16));
+
+        for (let i = 0; i < 4; i++) {
+          particles.push({
+            x: rx - Math.sin(ang) * 28 + (Math.random() - 0.5) * 8,
+            y: alt - Math.cos(ang) * 28,
+            vx: (Math.random() - 0.5) * 1.6 - Math.sin(ang) * 2,
+            vy: -3 - Math.random() * 2,
+            life: 1,
+            col: Math.random() > 0.35 ? '#fb923c' : '#fde047'
+          });
+        }
+      }
+
+      // Gravity + drag
+      vy -= 0.12;
+      if (chute && vy < 0) {
+        vy *= 0.88;
+        vx *= 0.94;
+      }
+      rx = Math.max(40, Math.min(660, rx + vx));
+      alt += vy;
+
+      if (alt <= 0) {
+        alt = 0; vy = 0; vx = 0;
+        state = 'LANDED';
+      }
+    }
+
+    if (spentBooster) {
+      spentBooster.vy -= 0.12;
+      spentBooster.alt += spentBooster.vy;
+      spentBooster.rot += 0.04;
+      if (spentBooster.alt < 0) spentBooster = null;
+    }
+
+    if (rumGain && audioCtx) {
+      rumGain.gain.setTargetAtTime(soundOn && firing ? 0.16 : 0, audioCtx.currentTime, 0.05);
+    }
+
+    // Sky gradient shifts to space with altitude
+    const spaceMix = Math.min(1, alt / 2500);
+    ctx.fillStyle = spaceMix > 0.6 ? '#040711' : '#0b1830';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Stars fade in
+    STARS.forEach(s => {
+      ctx.fillStyle = `rgba(255,255,255,${0.15 + spaceMix * 0.8})`;
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+    });
+
+    // Camera follows rocket vertically
+    const camY = Math.max(0, alt - 180);
+    const screenY = (a) => 460 - (a - camY);
+
+    // Ground & Launchpad
+    const gy = screenY(0);
+    if (gy < 560) {
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(0, gy, canvas.width, 100);
+      ctx.fillStyle = '#475569';
+      ctx.fillRect(305, gy - 8, 90, 8);
+      ctx.fillStyle = '#64748b';
+      ctx.fillRect(305, gy - 90, 8, 90);
+    }
+
+    // Exhaust particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= 0.035;
+      if (p.life <= 0) { particles.splice(i, 1); continue; }
+      ctx.fillStyle = p.col;
+      ctx.globalAlpha = p.life;
+      ctx.beginPath(); ctx.arc(p.x, screenY(p.y), 5 * p.life + 2, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Spent booster
+    if (spentBooster) {
+      ctx.save();
+      ctx.translate(spentBooster.x, screenY(spentBooster.alt));
+      ctx.rotate(spentBooster.rot);
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillRect(-8, -16, 16, 32);
+      ctx.restore();
+    }
+
+    // Rocket
+    const ry = screenY(alt);
+    const tiltRad = state === 'FLYING' ? (Number(tiltR.value) * Math.PI) / 180 : 0;
+    ctx.save();
+    ctx.translate(rx, ry - 28);
+    ctx.rotate(tiltRad);
+
+    if (chute) {
+      ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(-6, -24); ctx.lineTo(-26, -60); ctx.moveTo(6, -24); ctx.lineTo(26, -60); ctx.stroke();
+      ctx.fillStyle = '#f97316';
+      ctx.beginPath(); ctx.arc(0, -60, 28, Math.PI, 0); ctx.fill();
+    }
+
+    // Upper stage
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(-9, -24, 18, 28);
+    // Nose cone
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath(); ctx.moveTo(-9, -24); ctx.lineTo(0, -44); ctx.lineTo(9, -24); ctx.closePath(); ctx.fill();
+
+    // Stage 1 booster
+    if (stage === 1) {
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fillRect(-10, 4, 20, 24);
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath(); ctx.moveTo(-10, 18); ctx.lineTo(-18, 28); ctx.lineTo(-10, 28); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(10, 18); ctx.lineTo(18, 28); ctx.lineTo(10, 28); ctx.fill();
+    }
+    ctx.restore();
+
+    tAlt.textContent = Math.round(alt * 4) + ' m';
+    tVel.textContent = Math.round(Math.hypot(vx, vy) * 18) + ' m/s';
+    tFuel.textContent = Math.round(fuel) + '%';
+    tStage.textContent = state === 'PAD' ? 'PAD' : (chute ? 'CHUTE' : `STG ${stage}`);
+  }
+
+  document.getElementById('launchBtn').addEventListener('click', () => {
+    if (state === 'PAD') { state = 'FLYING'; vy = 1.2; }
+  });
+  document.getElementById('stageBtn').addEventListener('click', () => {
+    if (state === 'FLYING' && stage === 1) {
+      stage = 2;
+      fuel = Math.min(100, fuel + 35);
+      vy += 1.4;
+      spentBooster = { x: rx, alt: alt - 10, vy: vy - 1, rot: 0 };
+    }
+  });
+  document.getElementById('chuteBtn').addEventListener('click', () => {
+    if (state === 'FLYING') chute = true;
+  });
+  document.getElementById('resetBtn').addEventListener('click', resetPad);
+
+  soundBtn.addEventListener('click', () => {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 2, audioCtx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf; src.loop = true;
+      const f = audioCtx.createBiquadFilter();
+      f.type = 'lowpass'; f.frequency.value = 180;
+      rumGain = audioCtx.createGain();
+      rumGain.gain.value = 0;
+      src.connect(f); f.connect(rumGain); rumGain.connect(audioCtx.destination);
+      src.start();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? 'Engine Audio: On' : 'Engine Audio: Off';
+    soundBtn.classList.toggle('on', soundOn);
+  });
+
+  step();
+})();
+</script>
+</body>
+</html>

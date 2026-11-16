@@ -1,0 +1,296 @@
+<!-- 08-ceramic-kintsugi.html — Kintsugi Pottery Studio: Tap a handcrafted ceramic vase to fracture it along procedural lines, then brush molten gold lacquer to mend it. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kintsugi Pottery Studio</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(circle at 50% 20%, #1d1a16 0%, #0d0c0a 75%);
+    color: #f4efe6;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 18px;
+  }
+  .header {
+    width: 100%;
+    max-width: 920px;
+    background: #171512;
+    border: 1px solid #302a22;
+    border-radius: 14px;
+    padding: 12px 18px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .header h1 { font-size: 1.15rem; color: #f6c95b; }
+  .header p { font-size: 0.78rem; color: #a39a8c; }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; }
+  button, select {
+    background: #25211b;
+    color: #f4efe6;
+    border: 1px solid #3e362c;
+    border-radius: 8px;
+    padding: 7px 13px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.active { background: #f6c95b; color: #1d1504; border-color: #f6c95b; }
+  canvas#studio {
+    width: 100%;
+    max-width: 920px;
+    height: 520px;
+    background: #12100d;
+    border: 2px solid #302a22;
+    border-radius: 18px;
+    cursor: crosshair;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.65);
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <h1>Kintsugi Pottery Studio</h1>
+    <p>Switch between Crack mode to fracture the ceramic glaze and Gold Brush mode to mend seams with lacquer</p>
+  </div>
+  <div class="btns">
+    <button id="crackModeBtn" class="active">Mode: Crack Vase</button>
+    <button id="goldModeBtn">Mode: Gold Brush</button>
+    <select id="glazeSel">
+      <option value="celadon">Glaze: Celadon Jade</option>
+      <option value="cobalt">Glaze: Midnight Cobalt</option>
+      <option value="obsidian">Glaze: Matte Obsidian</option>
+    </select>
+    <button id="soundBtn">Sound: Off</button>
+    <button id="newBtn">Fresh Vase</button>
+  </div>
+</div>
+<canvas id="studio" width="920" height="520"></canvas>
+
+<script>
+(() => {
+  const canvas = document.getElementById('studio');
+  const ctx = canvas.getContext('2d');
+  const crackModeBtn = document.getElementById('crackModeBtn');
+  const goldModeBtn = document.getElementById('goldModeBtn');
+  const glazeSel = document.getElementById('glazeSel');
+  const soundBtn = document.getElementById('soundBtn');
+
+  let mode = 'crack';
+  let soundOn = false, audioCtx = null;
+  let cracks = [];
+  let painting = false;
+
+  const GLAZES = {
+    celadon: ['#6ba38e', '#3a6657', '#1c332b'],
+    cobalt: ['#4f75b8', '#253c6b', '#101b33'],
+    obsidian: ['#4b4d54', '#26282e', '#111216']
+  };
+
+  function playCrackSound() {
+    if (!soundOn || !audioCtx) return;
+    const now = audioCtx.currentTime;
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.14, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (audioCtx.sampleRate * 0.025));
+    }
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    const filt = audioCtx.createBiquadFilter();
+    filt.type = 'bandpass';
+    filt.frequency.value = 2600 + Math.random() * 900;
+    const g = audioCtx.createGain();
+    g.gain.value = 0.5;
+    src.connect(filt); filt.connect(g); g.connect(audioCtx.destination);
+    src.start(now);
+  }
+
+  function playGoldChime() {
+    if (!soundOn || !audioCtx) return;
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880 + Math.random() * 220, now);
+    g.gain.setValueAtTime(0.03, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(now); osc.stop(now + 0.13);
+  }
+
+  function vasePath(c) {
+    c.beginPath();
+    c.moveTo(395, 76);
+    c.lineTo(525, 76);
+    c.bezierCurveTo(510, 130, 610, 190, 600, 305);
+    c.bezierCurveTo(592, 395, 540, 445, 520, 458);
+    c.lineTo(400, 458);
+    c.bezierCurveTo(380, 445, 328, 395, 320, 305);
+    c.bezierCurveTo(310, 190, 410, 130, 395, 76);
+    c.closePath();
+  }
+
+  function addFracture(x, y) {
+    const branches = 3 + Math.floor(Math.random() * 3);
+    for (let b = 0; b < branches; b++) {
+      let cx = x, cy = y;
+      let ang = (b / branches) * Math.PI * 2 + (Math.random() - 0.5) * 0.7;
+      const segs = [];
+      const steps = 6 + Math.floor(Math.random() * 6);
+      for (let s = 0; s < steps; s++) {
+        const len = 14 + Math.random() * 18;
+        ang += (Math.random() - 0.5) * 0.7;
+        const nx = cx + Math.cos(ang) * len;
+        const ny = cy + Math.sin(ang) * len;
+        segs.push({ x1: cx, y1: cy, x2: nx, y2: ny, gold: 0 });
+        cx = nx; cy = ny;
+      }
+      cracks.push(...segs);
+    }
+    playCrackSound();
+    draw();
+  }
+
+  function brushGold(x, y) {
+    let touched = false;
+    for (const seg of cracks) {
+      const mx = (seg.x1 + seg.x2) / 2;
+      const my = (seg.y1 + seg.y2) / 2;
+      if (Math.hypot(x - mx, y - my) < 28 && seg.gold < 1) {
+        seg.gold = 1;
+        touched = true;
+      }
+    }
+    if (touched) playGoldChime();
+    draw();
+  }
+
+  function draw() {
+    ctx.fillStyle = '#12100d';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Wooden pedestal
+    ctx.fillStyle = '#2b2016';
+    ctx.fillRect(320, 458, 280, 22);
+    ctx.fillStyle = '#1d150e';
+    ctx.fillRect(340, 480, 240, 12);
+
+    // Vase body clipped
+    ctx.save();
+    vasePath(ctx);
+    ctx.clip();
+
+    const cols = GLAZES[glazeSel.value];
+    const grad = ctx.createRadialGradient(415, 220, 20, 460, 280, 260);
+    grad.addColorStop(0, cols[0]);
+    grad.addColorStop(0.55, cols[1]);
+    grad.addColorStop(1, cols[2]);
+    ctx.fillStyle = grad;
+    ctx.fillRect(280, 60, 360, 420);
+
+    // Specular highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.beginPath();
+    ctx.ellipse(390, 270, 22, 110, -0.1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Cracks & Gold seams
+    for (const seg of cracks) {
+      ctx.beginPath();
+      ctx.moveTo(seg.x1, seg.y1);
+      ctx.lineTo(seg.x2, seg.y2);
+      if (seg.gold > 0) {
+        ctx.strokeStyle = '#f6c95b';
+        ctx.lineWidth = 4.2;
+        ctx.shadowColor = '#f6c95b';
+        ctx.shadowBlur = 8;
+      } else {
+        ctx.strokeStyle = '#090909';
+        ctx.lineWidth = 2.4;
+        ctx.shadowBlur = 0;
+      }
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    // Vase outline
+    vasePath(ctx);
+    ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Rim ellipse
+    ctx.beginPath();
+    ctx.ellipse(460, 76, 65, 11, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#1a1713';
+    ctx.fill();
+    ctx.strokeStyle = cols[0];
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+  }
+
+  function getPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) * (canvas.width / rect.width),
+      y: (e.clientY - rect.top) * (canvas.height / rect.height)
+    };
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    const p = getPos(e);
+    vasePath(ctx);
+    if (!ctx.isPointInPath(p.x, p.y)) return;
+    if (mode === 'crack') addFracture(p.x, p.y);
+    else { painting = true; brushGold(p.x, p.y); }
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!painting || mode !== 'gold') return;
+    const p = getPos(e);
+    brushGold(p.x, p.y);
+  });
+
+  window.addEventListener('pointerup', () => { painting = false; });
+
+  crackModeBtn.addEventListener('click', () => {
+    mode = 'crack';
+    crackModeBtn.classList.add('active');
+    goldModeBtn.classList.remove('active');
+  });
+
+  goldModeBtn.addEventListener('click', () => {
+    mode = 'gold';
+    goldModeBtn.classList.add('active');
+    crackModeBtn.classList.remove('active');
+  });
+
+  glazeSel.addEventListener('change', draw);
+  document.getElementById('newBtn').addEventListener('click', () => { cracks = []; draw(); });
+
+  soundBtn.addEventListener('click', () => {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? 'Sound: On' : 'Sound: Off';
+    soundBtn.classList.toggle('active', soundOn);
+  });
+
+  draw();
+})();
+</script>
+</body>
+</html>

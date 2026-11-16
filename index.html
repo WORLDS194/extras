@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Mini Toys/Projects</title>
+<style>
+  :root {
+    --bg: #0b0b0e;
+    --surface: #141419;
+    --ink: #0b0b0e;
+    --paper: #f4f4f6;
+    --muted: #9ca3af;
+    --accent: #e4e4e7;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    min-height: 100vh;
+    background-color: var(--bg);
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 28px 28px;
+    color: var(--paper);
+    font-family: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 34px 20px 64px;
+  }
+
+  .wrap {
+    max-width: 1140px;
+    margin: 0 auto;
+  }
+
+  header {
+    background: var(--surface);
+    border: 3px solid var(--paper);
+    box-shadow: 6px 6px 0 var(--paper);
+    padding: 20px 22px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  h1 {
+    font-size: clamp(24px, 4vw, 38px);
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    text-transform: uppercase;
+    color: var(--paper);
+  }
+
+  .subtitle {
+    margin-top: 6px;
+    font-size: 13px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--muted);
+  }
+
+  .count-badge {
+    background: var(--paper);
+    color: var(--ink);
+    border: 3px solid var(--ink);
+    box-shadow: 4px 4px 0 #52525b;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 900;
+    text-transform: uppercase;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+
+  .search-input {
+    flex: 1 1 260px;
+    max-width: 360px;
+    background: var(--surface);
+    border: 3px solid var(--paper);
+    box-shadow: 4px 4px 0 #3f3f46;
+    color: var(--paper);
+    padding: 11px 14px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    outline: none;
+  }
+
+  .search-input::placeholder { color: #71717a; }
+  .search-input:focus { box-shadow: 4px 4px 0 var(--paper); }
+
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .filter-btn {
+    background: var(--surface);
+    border: 2.5px solid #52525b;
+    box-shadow: 3px 3px 0 #3f3f46;
+    color: var(--paper);
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: transform 0.1s ease, box-shadow 0.1s ease, border-color 0.1s ease;
+  }
+
+  .filter-btn:hover {
+    transform: translate(-1px, -1px);
+    border-color: var(--paper);
+    box-shadow: 4px 4px 0 var(--paper);
+  }
+
+  .filter-btn.active {
+    background: var(--paper);
+    color: var(--ink);
+    border-color: var(--paper);
+    box-shadow: 4px 4px 0 #52525b;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    gap: 18px;
+  }
+
+  .card {
+    background: var(--card-bg);
+    color: var(--paper);
+    border: 3px solid var(--card-accent);
+    box-shadow: 5px 5px 0 var(--card-accent);
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 16px;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+  }
+
+  .card:hover {
+    transform: translate(-3px, -3px);
+    box-shadow: 8px 8px 0 var(--card-accent);
+  }
+
+  .card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .card-title {
+    font-size: 18px;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    color: var(--paper);
+  }
+
+  .card-cat {
+    font-size: 10px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: var(--card-accent);
+    color: var(--ink);
+    padding: 4px 8px;
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  .card-meta {
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(244, 244, 246, 0.72);
+    margin-top: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  .card-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 900;
+    text-transform: uppercase;
+    padding: 10px 10px;
+    border: 2.5px solid var(--card-accent);
+    box-shadow: 3px 3px 0 #000000;
+    cursor: pointer;
+    transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.08s ease;
+  }
+
+  .btn:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 4px 4px 0 #000000;
+    filter: brightness(1.08);
+  }
+
+  .btn:active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0 #000000;
+  }
+
+  .btn-open {
+    background: var(--card-accent);
+    color: var(--ink);
+    border-color: #000000;
+  }
+
+  .btn-dl {
+    background: #101016;
+    color: var(--paper);
+  }
+
+  .empty {
+    grid-column: 1 / -1;
+    background: var(--surface);
+    border: 3px solid var(--paper);
+    box-shadow: 5px 5px 0 #52525b;
+    text-align: center;
+    padding: 40px 16px;
+    color: var(--paper);
+    font-size: 14px;
+    font-weight: 700;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>The Mini Toys/Projects</h1>
+      <p class="subtitle">open any html tool directly or download the single-file source</p>
+    </div>
+    <div class="count-badge" id="countBadge">26 projects</div>
+  </header>
+
+  <div class="toolbar">
+    <input type="text" class="search-input" id="searchInput" placeholder="search toys or files...">
+    <div class="filters" id="filterBar">
+      <button class="filter-btn active" data-cat="all">all</button>
+      <button class="filter-btn" data-cat="physics">sims & physics</button>
+      <button class="filter-btn" data-cat="audio">audio & synth</button>
+      <button class="filter-btn" data-cat="art">art & pixel</button>
+      <button class="filter-btn" data-cat="tools">tools & dev</button>
+    </div>
+  </div>
+
+  <div class="grid" id="grid"></div>
+</div>
+
+<script>
+const CAT_THEME = {
+  physics: { bg: '#131d33', accent: '#60a5fa', label: 'sims & physics' },
+  audio:   { bg: '#112622', accent: '#2dd4bf', label: 'audio & synth' },
+  art:     { bg: '#261429', accent: '#f472b6', label: 'art & pixel' },
+  tools:   { bg: '#241c11', accent: '#f59e0b', label: 'tools & dev' }
+};
+
+const PROJECTS = [
+  { file: 'ball-scenarios.html', title: 'Ball Scenarios', cat: 'physics', size: '44.1 KB' },
+  { file: '01-waveform-synth.html', title: 'Waveform Synth', cat: 'audio', size: '16.6 KB' },
+  { file: '02-palette-alchemy.html', title: 'Palette Alchemy', cat: 'art', size: '15.2 KB' },
+  { file: '03-focus-terrarium.html', title: 'Focus Terrarium', cat: 'physics', size: '13.3 KB' },
+  { file: '04-crank-automaton.html', title: 'Crank Automaton', cat: 'physics', size: '10.9 KB' },
+  { file: '05-glitch-crt.html', title: 'Glitch CRT', cat: 'art', size: '10.3 KB' },
+  { file: '06-pixel-critter.html', title: 'Pixel Critter', cat: 'art', size: '7.5 KB' },
+  { file: '07-magnetic-iron.html', title: 'Magnetic Iron', cat: 'physics', size: '7.9 KB' },
+  { file: '08-ceramic-kintsugi.html', title: 'Ceramic Kintsugi', cat: 'art', size: '8.9 KB' },
+  { file: '09-bubble-wrap-pro.html', title: 'Bubble Wrap Pro', cat: 'physics', size: '6.0 KB' },
+  { file: '10-zen-sand-rake.html', title: 'Zen Sand Rake', cat: 'art', size: '7.3 KB' },
+  { file: '11-pixel-sprite-forge.html', title: 'Pixel Sprite Forge', cat: 'art', size: '8.9 KB' },
+  { file: '12-chord-compass.html', title: 'Chord Compass', cat: 'audio', size: '9.5 KB' },
+  { file: '13-unit-scale-lab.html', title: 'Unit Scale Lab', cat: 'tools', size: '9.0 KB' },
+  { file: '14-gravity-orbit-sim.html', title: 'Gravity Orbit Sim', cat: 'physics', size: '7.7 KB' },
+  { file: '15-kaleidoscope-loom.html', title: 'Kaleidoscope Loom', cat: 'art', size: '5.8 KB' },
+  { file: '16-circuit-breadboard.html', title: 'Circuit Breadboard', cat: 'tools', size: '7.6 KB' },
+  { file: '17-paper-airplane-wind.html', title: 'Paper Airplane Wind', cat: 'physics', size: '4.9 KB' },
+  { file: '18-squishy-simulator.html', title: 'Squishy Simulator', cat: 'physics', size: '11.0 KB' },
+  { file: '19-domino-cascade.html', title: 'Domino Cascade', cat: 'physics', size: '6.3 KB' },
+  { file: '20-lava-wax-lamp.html', title: 'Lava Wax Lamp', cat: 'physics', size: '6.8 KB' },
+  { file: '21-breadboard-maker.html', title: 'Breadboard Maker', cat: 'tools', size: '12.7 KB' },
+  { file: '22-rocket-launcher.html', title: 'Rocket Launcher', cat: 'physics', size: '10.1 KB' },
+  { file: '23-pixel-font-studio.html', title: 'Pixel Font Studio', cat: 'art', size: '5.9 KB' },
+  { file: '24-regex-xray.html', title: 'Regex X-Ray', cat: 'tools', size: '5.6 KB' },
+  { file: '25-bpm-tap-metronome.html', title: 'BPM Tap Metronome', cat: 'audio', size: '5.9 KB' }
+];
+
+const grid = document.getElementById('grid');
+const searchInput = document.getElementById('searchInput');
+const countBadge = document.getElementById('countBadge');
+const filterBtns = document.querySelectorAll('.filter-btn');
+
+let activeCat = 'all';
+
+function render() {
+  const q = searchInput.value.trim().toLowerCase();
+  const filtered = PROJECTS.filter(p => {
+    const catOk = activeCat === 'all' || p.cat === activeCat;
+    const textOk = !q || p.title.toLowerCase().includes(q) || p.file.toLowerCase().includes(q);
+    return catOk && textOk;
+  });
+
+  countBadge.textContent = `${filtered.length} ${filtered.length === 1 ? 'project' : 'projects'}`;
+
+  if (!filtered.length) {
+    grid.innerHTML = '<div class="empty">no matching toys or projects found.</div>';
+    return;
+  }
+
+  grid.innerHTML = filtered.map(p => {
+    const theme = CAT_THEME[p.cat];
+    return `
+      <div class="card" style="--card-bg: ${theme.bg}; --card-accent: ${theme.accent};">
+        <div>
+          <div class="card-top">
+            <div class="card-title">${p.title}</div>
+            <span class="card-cat">${theme.label}</span>
+          </div>
+          <div class="card-meta">${p.file} &bull; ${p.size}</div>
+        </div>
+        <div class="card-actions">
+          <a class="btn btn-open" href="${p.file}">open tool</a>
+          <a class="btn btn-dl" href="${p.file}" download="${p.file}">download html</a>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+filterBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    filterBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeCat = btn.dataset.cat;
+    render();
+  });
+});
+
+searchInput.addEventListener('input', render);
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>falling sand lab</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0d0f14;color:#e4e7ef;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:16px;gap:12px;user-select:none}
+  header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;width:100%;max-width:760px;gap:10px}
+  h1{font-size:16px;font-weight:600;letter-spacing:.04em;color:#9be8d8}
+  .controls{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  button{background:#181c26;color:#d6dbe8;border:1px solid #2b3245;padding:6px 10px;border-radius:6px;font:inherit;font-size:12px;cursor:pointer;transition:.12s}
+  button:hover{border-color:#536080}
+  button.active{background:#233044;border-color:#68d8d6;color:#fff}
+  .palette{display:flex;flex-wrap:wrap;gap:6px;max-width:760px;width:100%}
+  .el-btn{display:flex;align-items:center;gap:6px;padding:6px 10px}
+  .swatch{width:10px;height:10px;border-radius:2px;display:inline-block}
+  .wrap{position:relative;border:1px solid #262c3d;border-radius:8px;overflow:hidden;background:#07080b;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+  canvas{display:block;width:min(760px,95vw);height:auto;aspect-ratio:190/120;image-rendering:pixelated;cursor:crosshair;touch-action:none}
+  .bar{display:flex;align-items:center;gap:12px;font-size:12px;color:#8e97ad;width:100%;max-width:760px;justify-content:space-between;flex-wrap:wrap}
+  input[type=range]{accent-color:#68d8d6}
+</style>
+</head>
+<body>
+<header>
+  <h1>falling sand lab</h1>
+  <div class="controls">
+    <button id="pauseBtn">pause</button>
+    <button id="stepBtn">step</button>
+    <button id="clearBtn">clear</button>
+  </div>
+</header>
+<div class="palette" id="palette"></div>
+<div class="wrap"><canvas id="c" width="190" height="120"></canvas></div>
+<div class="bar">
+  <label>brush <input id="brush" type="range" min="1" max="8" value="3"> <span id="brushVal">3</span></label>
+  <span id="stats">particles: 0</span>
+</div>
+<script>
+const W = 190, H = 120;
+const EMPTY=0,SAND=1,WATER=2,STONE=3,WOOD=4,FIRE=5,SMOKE=6,ACID=7,OIL=8,PLANT=9,GUNPOWDER=10;
+const ELEMENTS = [
+  {id:SAND, name:'sand', color:'#e5c158'},
+  {id:WATER, name:'water', color:'#3b82f6'},
+  {id:STONE, name:'stone', color:'#6b7280'},
+  {id:WOOD, name:'wood', color:'#8b5a2b'},
+  {id:FIRE, name:'fire', color:'#ff5a1f'},
+  {id:ACID, name:'acid', color:'#84cc16'},
+  {id:OIL, name:'oil', color:'#4a3723'},
+  {id:PLANT, name:'plant', color:'#22c55e'},
+  {id:GUNPOWDER, name:'powder', color:'#9ca3af'},
+  {id:EMPTY, name:'erase', color:'#1f2430'}
+];
+
+const grid = new Uint8Array(W*H);
+const life = new Uint8Array(W*H);
+const updated = new Uint8Array(W*H);
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const img = ctx.createImageData(W, H);
+let current = SAND, brush = 3, paused = false, drawing = false, mx = 0, my = 0;
+
+const pal = document.getElementById('palette');
+ELEMENTS.forEach(el => {
+  const b = document.createElement('button');
+  b.className = 'el-btn' + (el.id===current?' active':'');
+  b.innerHTML = `<span class="swatch" style="background:${el.color}"></span>${el.name}`;
+  b.onclick = () => {
+    current = el.id;
+    [...pal.children].forEach(c => c.classList.remove('active'));
+    b.classList.add('active');
+  };
+  pal.appendChild(b);
+});
+
+const brushIn = document.getElementById('brush');
+const brushVal = document.getElementById('brushVal');
+brushIn.oninput = () => { brush = +brushIn.value; brushVal.textContent = brush; };
+document.getElementById('pauseBtn').onclick = e => { paused = !paused; e.target.textContent = paused ? 'resume' : 'pause'; };
+document.getElementById('stepBtn').onclick = () => { if(paused){ tick(); render(); } };
+document.getElementById('clearBtn').onclick = () => { grid.fill(0); life.fill(0); render(); };
+
+function setCell(x,y,t,l=0){
+  if(x<0||x>=W||y<0||y>=H) return;
+  const i = y*W+x;
+  grid[i]=t; life[i]=l;
+}
+function paint(cx,cy){
+  for(let dy=-brush+1;dy<brush;dy++){
+    for(let dx=-brush+1;dx<brush;dx++){
+      if(dx*dx+dy*dy <= brush*brush){
+        const x=cx+dx, y=cy+dy;
+        if(x<0||x>=W||y<0||y>=H) continue;
+        if(current===EMPTY || grid[y*W+x]===EMPTY || current===STONE || current===WOOD){
+          if(current===SAND||current===WATER||current===GUNPOWDER||current===OIL){
+            if(Math.random()<0.65) setCell(x,y,current,0);
+          } else if(current===FIRE){
+            setCell(x,y,FIRE, 20 + (Math.random()*25|0));
+          } else {
+            setCell(x,y,current,0);
+          }
+        }
+      }
+    }
+  }
+}
+
+function pos(e){
+  const r = canvas.getBoundingClientRect();
+  const pt = e.touches ? e.touches[0] : e;
+  mx = Math.floor((pt.clientX - r.left) / r.width * W);
+  my = Math.floor((pt.clientY - r.top) / r.height * H);
+}
+canvas.addEventListener('pointerdown', e => { drawing=true; pos(e); paint(mx,my); });
+window.addEventListener('pointerup', () => drawing=false);
+canvas.addEventListener('pointermove', e => { pos(e); if(drawing) paint(mx,my); });
+
+function swap(a,b){
+  const tg=grid[a], tl=life[a];
+  grid[a]=grid[b]; life[a]=life[b];
+  grid[b]=tg; life[b]=tl;
+  updated[a]=1; updated[b]=1;
+}
+
+function neighbors4(x,y){
+  return [[x+1,y],[x-1,y],[x,y+1],[x,y-1]];
+}
+
+function tick(){
+  updated.fill(0);
+  for(let y=H-1;y>=0;y--){
+    const leftToRight = Math.random() < 0.5;
+    for(let xi=0;xi<W;xi++){
+      const x = leftToRight ? xi : W-1-xi;
+      const i = y*W+x;
+      if(updated[i]) continue;
+      const t = grid[i];
+      if(t===EMPTY || t===STONE || t===WOOD) continue;
+
+      if(t===SAND || t===GUNPOWDER){
+        if(y+1<H){
+          const below = (y+1)*W+x;
+          if(grid[below]===EMPTY || grid[below]===WATER || grid[below]===OIL || grid[below]===ACID){
+            swap(i, below); continue;
+          }
+          const dir = Math.random()<0.5 ? -1 : 1;
+          for(const d of [dir,-dir]){
+            const nx=x+d;
+            if(nx>=0&&nx<W){
+              const diag=(y+1)*W+nx;
+              if(grid[diag]===EMPTY||grid[diag]===WATER||grid[diag]===OIL){ swap(i,diag); break; }
+            }
+          }
+        }
+      } else if(t===WATER || t===OIL || t===ACID){
+        if(t===ACID){
+          let dissolved=false;
+          for(const [nx,ny] of neighbors4(x,y)){
+            if(nx>=0&&nx<W&&ny>=0&&ny<H){
+              const ni=ny*W+nx, nt=grid[ni];
+              if(nt!==EMPTY && nt!==ACID && nt!==STONE && Math.random()<0.15){
+                grid[ni]=EMPTY; grid[i]=EMPTY; dissolved=true; break;
+              }
+            }
+          }
+          if(dissolved) continue;
+        }
+        if(y+1<H){
+          const below=(y+1)*W+x;
+          if(grid[below]===EMPTY || (t===WATER && grid[below]===OIL)){ swap(i,below); continue; }
+          const dir=Math.random()<0.5?-1:1;
+          let moved=false;
+          for(const d of [dir,-dir]){
+            const nx=x+d;
+            if(nx>=0&&nx<W && grid[(y+1)*W+nx]===EMPTY){ swap(i,(y+1)*W+nx); moved=true; break; }
+          }
+          if(moved) continue;
+        }
+        const dir=Math.random()<0.5?-1:1;
+        for(const d of [dir,-dir]){
+          const nx=x+d;
+          if(nx>=0&&nx<W && grid[y*W+nx]===EMPTY){ swap(i,y*W+nx); break; }
+        }
+      } else if(t===FIRE){
+        if(life[i]<=1){ grid[i]=Math.random()<0.4?SMOKE:EMPTY; life[i]=25; continue; }
+        life[i]--;
+        for(const [nx,ny] of neighbors4(x,y)){
+          if(nx>=0&&nx<W&&ny>=0&&ny<H){
+            const ni=ny*W+nx, nt=grid[ni];
+            if(nt===WATER){ grid[i]=SMOKE; life[i]=20; break; }
+            if(nt===WOOD && Math.random()<0.06){ grid[ni]=FIRE; life[ni]=40; }
+            if(nt===PLANT && Math.random()<0.25){ grid[ni]=FIRE; life[ni]=30; }
+            if(nt===OIL && Math.random()<0.45){ grid[ni]=FIRE; life[ni]=35; }
+            if(nt===GUNPOWDER){
+              for(let ey=-3;ey<=3;ey++) for(let ex=-3;ex<=3;ex++){
+                const rx=nx+ex, ry=ny+ey;
+                if(rx>=0&&rx<W&&ry>=0&&ry<H && ex*ex+ey*ey<=10 && grid[ry*W+rx]!==STONE){
+                  grid[ry*W+rx]=FIRE; life[ry*W+rx]=18; updated[ry*W+rx]=1;
+                }
+              }
+            }
+          }
+        }
+        if(y>0 && Math.random()<0.35){
+          const up=(y-1)*W+(x + ((Math.random()*3|0)-1));
+          if(up>=0 && up<W*H && grid[up]===EMPTY) swap(i,up);
+        }
+      } else if(t===SMOKE){
+        if(life[i]<=1){ grid[i]=EMPTY; continue; }
+        life[i]--;
+        if(y>0){
+          const nx = Math.max(0,Math.min(W-1, x + ((Math.random()*3|0)-1)));
+          const up=(y-1)*W+nx;
+          if(grid[up]===EMPTY) swap(i,up);
+        }
+      } else if(t===PLANT){
+        for(const [nx,ny] of neighbors4(x,y)){
+          if(nx>=0&&nx<W&&ny>=0&&ny<H && grid[ny*W+nx]===WATER && Math.random()<0.08){
+            grid[ny*W+nx]=PLANT; updated[ny*W+nx]=1;
+          }
+        }
+      }
+    }
+  }
+}
+
+const COLORS = {
+  [EMPTY]:[7,8,11],
+  [SAND]:[229,193,88],
+  [WATER]:[59,130,246],
+  [STONE]:[107,114,128],
+  [WOOD]:[139,90,43],
+  [FIRE]:[255,100,30],
+  [SMOKE]:[95,102,115],
+  [ACID]:[132,204,22],
+  [OIL]:[74,55,35],
+  [PLANT]:[34,197,94],
+  [GUNPOWDER]:[156,163,175]
+};
+
+function render(){
+  const d = img.data;
+  let count = 0;
+  for(let i=0;i<W*H;i++){
+    const t = grid[i];
+    if(t!==EMPTY) count++;
+    let [r,g,b] = COLORS[t];
+    if(t===FIRE){ r=255; g=70+((life[i]*4)%160); b=20; }
+    else if(t===SAND||t===STONE||t===PLANT){ const n=((i*2654435761)%17)-8; r=Math.max(0,Math.min(255,r+n)); g=Math.max(0,Math.min(255,g+n)); }
+    const p = i*4;
+    d[p]=r; d[p+1]=g; d[p+2]=b; d[p+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+  document.getElementById('stats').textContent = `particles: ${count}`;
+}
+
+function loop(){
+  if(drawing) paint(mx,my);
+  if(!paused) tick();
+  render();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>

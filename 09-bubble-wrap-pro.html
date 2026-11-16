@@ -1,0 +1,191 @@
+<!-- 09-bubble-wrap-pro.html — Infinite Tactile Bubble Wrap & Pop-It: Pop 3D-shaded bubbles and silicone dimples with streak combos and crisp Web Audio pops. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Infinite Tactile Bubble Wrap</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #10131b;
+    color: #f1f5f9;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+  }
+  .bar {
+    width: 100%;
+    max-width: 880px;
+    background: #181d29;
+    border: 1px solid #2b3347;
+    border-radius: 16px;
+    padding: 14px 18px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .bar h1 { font-size: 1.15rem; }
+  .bar p { font-size: 0.78rem; color: #8f9bb3; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button, select {
+    background: #232a3b;
+    color: #f8fafc;
+    border: 1px solid #39445e;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.on { background: #38e4ae; color: #071b14; border-color: #38e4ae; }
+  .counter {
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: #38e4ae;
+    background: #0f1722;
+    padding: 7px 12px;
+    border-radius: 8px;
+    border: 1px solid #273248;
+  }
+  .sheet {
+    width: 100%;
+    max-width: 880px;
+    background: linear-gradient(145deg, #1b2232, #131824);
+    border: 2px solid #2c354b;
+    border-radius: 22px;
+    padding: 22px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+    gap: 12px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.55);
+  }
+  .bubble {
+    aspect-ratio: 1;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.08s ease, box-shadow 0.12s ease, background 0.12s ease;
+    background: radial-gradient(circle at 32% 28%, rgba(255,255,255,0.75) 0%, rgba(148,197,255,0.35) 35%, rgba(59,130,246,0.22) 100%);
+    box-shadow: inset 0 -4px 8px rgba(0,0,0,0.35), inset 0 4px 6px rgba(255,255,255,0.45), 0 4px 10px rgba(0,0,0,0.35);
+  }
+  .bubble:hover:not(.popped) { transform: scale(1.05); }
+  .bubble.popped {
+    transform: scale(0.9);
+    background: radial-gradient(circle at 50% 50%, rgba(15,23,42,0.75) 0%, rgba(30,41,59,0.5) 100%);
+    box-shadow: inset 0 4px 10px rgba(0,0,0,0.7);
+  }
+  .sheet.silicone .bubble {
+    background: radial-gradient(circle at 32% 28%, #f9a8d4 0%, #ec4899 55%, #9d174d 100%);
+  }
+  .sheet.silicone .bubble.popped {
+    background: radial-gradient(circle at 50% 50%, #500724 0%, #831843 100%);
+  }
+  .sheet.neon .bubble {
+    background: radial-gradient(circle at 32% 28%, #a7f3d0 0%, #10b981 55%, #065f46 100%);
+  }
+  .sheet.neon .bubble.popped {
+    background: radial-gradient(circle at 50% 50%, #022c22 0%, #064e3b 100%);
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <div>
+    <h1>Infinite Tactile Bubble Wrap</h1>
+    <p>Drag across bubbles or click to pop; swap materials or hit Fresh Sheet anytime</p>
+  </div>
+  <div class="controls">
+    <div class="counter">Popped: <span id="popCount">0</span></div>
+    <select id="matSel">
+      <option value="classic">Classic Clear</option>
+      <option value="silicone">Pastel Pop-It</option>
+      <option value="neon">Neon Gel</option>
+    </select>
+    <button id="soundBtn">Pop Audio: Off</button>
+    <button id="resetBtn">Fresh Sheet</button>
+  </div>
+</div>
+<div class="sheet" id="sheet"></div>
+
+<script>
+(() => {
+  const sheet = document.getElementById('sheet');
+  const popCountEl = document.getElementById('popCount');
+  const matSel = document.getElementById('matSel');
+  const soundBtn = document.getElementById('soundBtn');
+
+  let count = 0;
+  let dragging = false;
+  let audioCtx = null, soundOn = false;
+
+  function playPop() {
+    if (!soundOn || !audioCtx) return;
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    const base = 260 + Math.random() * 240;
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(base, now);
+    osc.frequency.exponentialRampToValueAtTime(90, now + 0.045);
+    g.gain.setValueAtTime(0.28, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(now); osc.stop(now + 0.055);
+  }
+
+  function popBubble(el) {
+    if (el.classList.contains('popped')) return;
+    el.classList.add('popped');
+    count++;
+    popCountEl.textContent = count;
+    playPop();
+  }
+
+  function buildSheet() {
+    sheet.innerHTML = '';
+    for (let i = 0; i < 84; i++) {
+      const b = document.createElement('button');
+      b.className = 'bubble';
+      b.setAttribute('aria-label', 'Bubble');
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        dragging = true;
+        popBubble(b);
+      });
+      b.addEventListener('pointerenter', () => {
+        if (dragging) popBubble(b);
+      });
+      sheet.appendChild(b);
+    }
+  }
+
+  window.addEventListener('pointerup', () => { dragging = false; });
+
+  matSel.addEventListener('change', () => {
+    sheet.className = 'sheet ' + (matSel.value === 'classic' ? '' : matSel.value);
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', buildSheet);
+
+  soundBtn.addEventListener('click', () => {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? 'Pop Audio: On' : 'Pop Audio: Off';
+    soundBtn.classList.toggle('on', soundOn);
+    if (soundOn) playPop();
+  });
+
+  buildSheet();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,349 @@
+<!-- 18-squishy-simulator.html — NeeDoh Squishy Simulator: Poke, squeeze, stretch, and slap a soft-body pastel NeeDoh squishy with slow-rise memory foam physics. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NeeDoh Squishy Simulator</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(circle at 50% 25%, #1d1a2e 0%, #0e0d17 75%);
+    color: #f4f2fb;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 18px;
+  }
+  .bar {
+    width: 100%;
+    max-width: 960px;
+    background: #171526;
+    border: 1px solid #2e2a4a;
+    border-radius: 16px;
+    padding: 14px 18px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .bar h1 { font-size: 1.18rem; color: #f472b6; }
+  .bar p { font-size: 0.78rem; color: #a59ec4; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button, select {
+    background: #232038;
+    color: #f4f2fb;
+    border: 1px solid #39345c;
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.on { background: #f472b6; color: #260718; border-color: #f472b6; }
+  .slider-lbl { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: #c4bede; }
+  .slider-lbl input { accent-color: #f472b6; }
+  canvas#squish {
+    width: 100%;
+    max-width: 960px;
+    aspect-ratio: 960 / 520;
+    background: radial-gradient(circle at 50% 55%, #1b192c 0%, #100f1c 100%);
+    border: 2px solid #2e2a4a;
+    border-radius: 20px;
+    cursor: grab;
+    touch-action: none;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.65);
+  }
+  canvas#squish:active { cursor: grabbing; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <div>
+    <h1>NeeDoh Squishy Simulator</h1>
+    <p>Poke, squish, stretch, or slap your soft-body squishy — volume-preserving memory foam physics</p>
+  </div>
+  <div class="controls">
+    <select id="shapeSel">
+      <option value="orb">Shape: Classic Orb</option>
+      <option value="cube">Shape: Nice Cube</option>
+      <option value="star">Shape: Groovy Star</option>
+    </select>
+    <select id="skinSel">
+      <option value="berry">Berry Translucent</option>
+      <option value="mint">Mint Cloud</option>
+      <option value="galaxy">Galaxy Glitter</option>
+      <option value="mango">Mango Swirl</option>
+    </select>
+    <label class="slider-lbl">Slow-Rise
+      <input id="rise" type="range" min="1" max="10" value="5">
+    </label>
+    <button id="squishAllBtn">Full Squeeze!</button>
+    <button id="soundBtn">Squish Audio: Off</button>
+  </div>
+</div>
+<canvas id="squish" width="960" height="520"></canvas>
+
+<script>
+(() => {
+  const canvas = document.getElementById('squish');
+  const ctx = canvas.getContext('2d');
+  const shapeSel = document.getElementById('shapeSel');
+  const skinSel = document.getElementById('skinSel');
+  const riseEl = document.getElementById('rise');
+  const soundBtn = document.getElementById('soundBtn');
+
+  const N = 48;
+  const CX = 480, CY = 255;
+  let radii = new Float32Array(N);
+  let velR = new Float32Array(N);
+  let restR = new Float32Array(N);
+  let offsetX = 0, offsetY = 0, vox = 0, voy = 0;
+
+  let pointer = { down: false, x: CX, y: CY, px: CX, py: CY };
+  let audioCtx = null, soundOn = false, lastSquishAudio = 0;
+
+  const SKINS = {
+    berry: { hi: '#fbcfe8', mid: '#f472b6', deep: '#9d174d', glow: 'rgba(244,114,182,0.35)', specks: '#ffffff' },
+    mint: { hi: '#d1fae5', mid: '#34d399', deep: '#065f46', glow: 'rgba(52,211,153,0.3)', specks: '#ecfdf5' },
+    galaxy: { hi: '#ddd6fe', mid: '#8b5cf6', deep: '#3b0764', glow: 'rgba(139,92,246,0.4)', specks: '#fde047' },
+    mango: { hi: '#fef08a', mid: '#fb923c', deep: '#9a3412', glow: 'rgba(251,146,60,0.35)', specks: '#fffbeb' }
+  };
+
+  const glitter = Array.from({ length: 42 }, () => ({
+    u: (Math.random() - 0.5) * 1.1,
+    v: (Math.random() - 0.5) * 1.1,
+    r: 1.5 + Math.random() * 2.5
+  }));
+
+  function targetRadius(angle, shape) {
+    if (shape === 'cube') {
+      const c = Math.max(Math.abs(Math.cos(angle)), Math.abs(Math.sin(angle)));
+      return 125 / Math.pow(c, 0.72);
+    }
+    if (shape === 'star') {
+      return 126 + Math.cos(angle * 5) * 28;
+    }
+    return 140;
+  }
+
+  function initMesh() {
+    const shape = shapeSel.value;
+    for (let i = 0; i < N; i++) {
+      const ang = (i / N) * Math.PI * 2;
+      restR[i] = targetRadius(ang, shape);
+      radii[i] = restR[i];
+      velR[i] = 0;
+    }
+    offsetX = 0; offsetY = 0; vox = 0; voy = 0;
+  }
+
+  function playSquish(intensity = 0.5) {
+    if (!soundOn || !audioCtx) return;
+    const nowMs = performance.now();
+    if (nowMs - lastSquishAudio < 120) return;
+    lastSquishAudio = nowMs;
+
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const filt = audioCtx.createBiquadFilter();
+    const g = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(140 + intensity * 120, now);
+    osc.frequency.exponentialRampToValueAtTime(75, now + 0.14);
+    filt.type = 'lowpass';
+    filt.frequency.value = 600;
+    g.gain.setValueAtTime(Math.min(0.22, 0.08 + intensity * 0.14), now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+    osc.connect(filt); filt.connect(g); g.connect(audioCtx.destination);
+    osc.start(now); osc.stop(now + 0.17);
+  }
+
+  function stepPhysics() {
+    const slow = Number(riseEl.value);
+    const kHome = 0.065 / (0.55 + slow * 0.28);
+    const damp = 0.76 + slow * 0.016;
+
+    // Whole-body spring back to center
+    vox += -offsetX * 0.08;
+    voy += -offsetY * 0.08;
+    vox *= 0.82;
+    voy *= 0.82;
+    offsetX = Math.max(-90, Math.min(90, offsetX + vox));
+    offsetY = Math.max(-70, Math.min(70, offsetY + voy));
+
+    const cx = CX + offsetX;
+    const cy = CY + offsetY;
+
+    // Volume-preserving pressure: calculate average radius deficit
+    let restSum = 0, curSum = 0;
+    for (let i = 0; i < N; i++) {
+      restSum += restR[i];
+      curSum += radii[i];
+    }
+    const bulge = (restSum - curSum) / N;
+
+    for (let i = 0; i < N; i++) {
+      const prev = radii[(i - 1 + N) % N];
+      const next = radii[(i + 1) % N];
+
+      // Spring toward rest + volume-preserving outward bulge
+      velR[i] += (restR[i] - radii[i]) * kHome + bulge * 0.09;
+      // Smooth surface tension between neighbors (prevents spikes!)
+      velR[i] += ((prev + next) * 0.5 - radii[i]) * 0.24;
+
+      if (pointer.down) {
+        const ang = (i / N) * Math.PI * 2;
+        const nx = cx + Math.cos(ang) * radii[i];
+        const ny = cy + Math.sin(ang) * radii[i];
+        const dx = pointer.x - cx;
+        const dy = pointer.y - cy;
+        const distToPt = Math.hypot(nx - pointer.x, ny - pointer.y);
+        if (distToPt < 110) {
+          const factor = 1 - distToPt / 110;
+          // Push inward if pressing toward center, or pull outward if dragging away
+          const pDist = Math.hypot(dx, dy);
+          if (pDist < radii[i] + 28) {
+            velR[i] -= factor * 5.2;
+          } else {
+            velR[i] += factor * 3.2;
+          }
+        }
+      }
+
+      velR[i] *= damp;
+      radii[i] = Math.max(42, Math.min(225, radii[i] + velR[i]));
+    }
+
+    if (pointer.down) {
+      const mx = pointer.x - pointer.px;
+      const my = pointer.y - pointer.py;
+      vox += mx * 0.08;
+      voy += my * 0.08;
+    }
+
+    pointer.px = pointer.x;
+    pointer.py = pointer.y;
+  }
+
+  function drawSquishy() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const cx = CX + offsetX;
+    const cy = CY + offsetY;
+
+    // Table shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath();
+    ctx.ellipse(cx, CY + 158, 160, 22, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const skin = SKINS[skinSel.value];
+    const pts = [];
+    for (let i = 0; i < N; i++) {
+      const ang = (i / N) * Math.PI * 2;
+      pts.push({ x: cx + Math.cos(ang) * radii[i], y: cy + Math.sin(ang) * radii[i] });
+    }
+
+    ctx.save();
+    ctx.beginPath();
+    for (let i = 0; i < N; i++) {
+      const curr = pts[i];
+      const next = pts[(i + 1) % N];
+      const mx = (curr.x + next.x) * 0.5;
+      const my = (curr.y + next.y) * 0.5;
+      if (i === 0) {
+        const last = pts[N - 1];
+        ctx.moveTo((last.x + curr.x) * 0.5, (last.y + curr.y) * 0.5);
+      }
+      ctx.quadraticCurveTo(curr.x, curr.y, mx, my);
+    }
+    ctx.closePath();
+
+    const grad = ctx.createRadialGradient(cx - 45, cy - 50, 14, cx, cy, 190);
+    grad.addColorStop(0, skin.hi);
+    grad.addColorStop(0.5, skin.mid);
+    grad.addColorStop(1, skin.deep);
+    ctx.shadowColor = skin.glow;
+    ctx.shadowBlur = 28;
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = skin.specks;
+    ctx.globalAlpha = skinSel.value === 'galaxy' ? 0.85 : 0.35;
+    glitter.forEach(g => {
+      ctx.beginPath();
+      ctx.arc(cx + g.u * 115, cy + g.v * 115, g.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.42)';
+    ctx.beginPath();
+    ctx.ellipse(cx - 48, cy - 58, 32, 15, -0.55, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function loop() {
+    requestAnimationFrame(loop);
+    stepPhysics();
+    drawSquishy();
+  }
+
+  function getPos(e) {
+    const r = canvas.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * (canvas.width / r.width), y: (e.clientY - r.top) * (canvas.height / r.height) };
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    const p = getPos(e);
+    pointer.down = true;
+    pointer.x = p.x; pointer.y = p.y;
+    pointer.px = p.x; pointer.py = p.y;
+    playSquish(0.6);
+  });
+  window.addEventListener('pointermove', (e) => {
+    if (!pointer.down) return;
+    const p = getPos(e);
+    const spd = Math.hypot(p.x - pointer.px, p.y - pointer.py);
+    if (spd > 6) playSquish(Math.min(1, spd / 30));
+    pointer.x = p.x; pointer.y = p.y;
+  });
+  window.addEventListener('pointerup', () => { pointer.down = false; });
+
+  document.getElementById('squishAllBtn').addEventListener('click', () => {
+    for (let i = 0; i < N; i++) {
+      velR[i] -= (i % 2 === 0 ? 18 : -10);
+    }
+    playSquish(0.95);
+  });
+
+  shapeSel.addEventListener('change', initMesh);
+
+  soundBtn.addEventListener('click', () => {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? 'Squish Audio: On' : 'Squish Audio: Off';
+    soundBtn.classList.toggle('on', soundOn);
+    if (soundOn) playSquish(0.5);
+  });
+
+  initMesh();
+  loop();
+})();
+</script>
+</body>
+</html>

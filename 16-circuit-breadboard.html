@@ -1,0 +1,243 @@
+<!-- 16-circuit-breadboard.html — Logic Gate & LED Breadboard: Toggle input switches and watch live logic gates drive custom LEDs and a 7-segment display. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Logic Gate & LED Breadboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0d1310;
+    color: #e9f5ee;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .board {
+    width: 100%;
+    max-width: 960px;
+    background: #12211a;
+    border: 3px solid #284b3a;
+    border-radius: 18px;
+    padding: 22px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+  }
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #264536;
+  }
+  .head h1 { font-size: 1.15rem; color: #4ade80; }
+  .head p { font-size: 0.78rem; color: #8cb39c; margin-top: 2px; }
+  button {
+    background: #1b3328;
+    color: #e9f5ee;
+    border: 1px solid #335e4a;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  button.on { background: #4ade80; color: #052010; border-color: #4ade80; }
+  .grid {
+    display: grid;
+    grid-template-columns: 200px 1fr 220px;
+    gap: 18px;
+    align-items: center;
+  }
+  @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+  .col {
+    background: #0c1712;
+    border: 1px solid #244032;
+    border-radius: 14px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .sw-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.86rem;
+    font-weight: 700;
+  }
+  .gate-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #13241c;
+    border: 1px solid #274738;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 0.84rem;
+  }
+  .led {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #1d2b24;
+    border: 2px solid #354f42;
+    transition: background 0.12s, box-shadow 0.12s;
+  }
+  .led.lit {
+    background: #4ade80;
+    border-color: #bbf7d0;
+    box-shadow: 0 0 14px #4ade80;
+  }
+  .led.red.lit {
+    background: #fb7185;
+    border-color: #fecdd3;
+    box-shadow: 0 0 14px #fb7185;
+  }
+</style>
+</head>
+<body>
+<div class="board">
+  <div class="head">
+    <div>
+      <h1>Logic Gate &amp; LED Breadboard</h1>
+      <p>Flip the 3-bit input switches or run the clock pulse to drive live logic gates and a 7-segment display</p>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button id="clkBtn">Auto Clock: Off</button>
+      <button id="soundBtn">Relay Click: Off</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="col">
+      <div style="font-size:0.75rem;color:#8cb39c;">INPUT SWITCHES</div>
+      <div class="sw-row"><span>Switch A (4)</span><button id="swA">0</button></div>
+      <div class="sw-row"><span>Switch B (2)</span><button id="swB">0</button></div>
+      <div class="sw-row"><span>Switch C (1)</span><button id="swC">0</button></div>
+    </div>
+
+    <div class="col">
+      <div style="font-size:0.75rem;color:#8cb39c;">LIVE LOGIC GATES</div>
+      <div class="gate-row"><span>A AND B</span><div class="led" id="ledAnd"></div></div>
+      <div class="gate-row"><span>A OR B</span><div class="led" id="ledOr"></div></div>
+      <div class="gate-row"><span>A XOR B</span><div class="led" id="ledXor"></div></div>
+      <div class="gate-row"><span>NOT C</span><div class="led red" id="ledNot"></div></div>
+      <div class="gate-row"><span>PARITY (A^B^C)</span><div class="led" id="ledPar"></div></div>
+    </div>
+
+    <div class="col" style="align-items:center;">
+      <div style="font-size:0.75rem;color:#8cb39c;">7-SEGMENT (0–7)</div>
+      <svg id="seg7" width="120" height="180" viewBox="0 0 120 180"></svg>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  let A = 0, B = 0, C = 0;
+  let clk = null, soundOn = false, audioCtx = null;
+
+  const swA = document.getElementById('swA');
+  const swB = document.getElementById('swB');
+  const swC = document.getElementById('swC');
+  const clkBtn = document.getElementById('clkBtn');
+  const soundBtn = document.getElementById('soundBtn');
+  const seg7 = document.getElementById('seg7');
+
+  const SEG_MAP = [
+    [1,1,1,1,1,1,0], // 0
+    [0,1,1,0,0,0,0], // 1
+    [1,1,0,1,1,0,1], // 2
+    [1,1,1,1,0,0,1], // 3
+    [0,1,1,0,0,1,1], // 4
+    [1,0,1,1,0,1,1], // 5
+    [1,0,1,1,1,1,1], // 6
+    [1,1,1,0,0,0,0]  // 7
+  ];
+
+  const SEG_RECTS = [
+    [25, 14, 70, 12],  // a
+    [95, 28, 12, 56],  // b
+    [95, 96, 12, 56],  // c
+    [25, 154, 70, 12], // d
+    [13, 96, 12, 56],  // e
+    [13, 28, 12, 56],  // f
+    [25, 84, 70, 12]   // g
+  ];
+
+  function clickSound() {
+    if (!soundOn || !audioCtx) return;
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(1200, now);
+    g.gain.setValueAtTime(0.06, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(now); osc.stop(now + 0.025);
+  }
+
+  function update() {
+    swA.textContent = A; swA.classList.toggle('on', !!A);
+    swB.textContent = B; swB.classList.toggle('on', !!B);
+    swC.textContent = C; swC.classList.toggle('on', !!C);
+
+    document.getElementById('ledAnd').classList.toggle('lit', !!(A & B));
+    document.getElementById('ledOr').classList.toggle('lit', !!(A | B));
+    document.getElementById('ledXor').classList.toggle('lit', !!(A ^ B));
+    document.getElementById('ledNot').classList.toggle('lit', !C);
+    document.getElementById('ledPar').classList.toggle('lit', !!(A ^ B ^ C));
+
+    const val = (A << 2) | (B << 1) | C;
+    const segs = SEG_MAP[val];
+    seg7.innerHTML = `<rect x="2" y="2" width="116" height="176" rx="12" fill="#080f0c" stroke="#244032"/>`;
+    SEG_RECTS.forEach(([x, y, w, h], idx) => {
+      const lit = segs[idx];
+      seg7.innerHTML += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="${lit ? '#4ade80' : '#182b22'}"/>`;
+    });
+  }
+
+  swA.addEventListener('click', () => { A ^= 1; clickSound(); update(); });
+  swB.addEventListener('click', () => { B ^= 1; clickSound(); update(); });
+  swC.addEventListener('click', () => { C ^= 1; clickSound(); update(); });
+
+  clkBtn.addEventListener('click', () => {
+    if (clk) {
+      clearInterval(clk); clk = null;
+      clkBtn.textContent = 'Auto Clock: Off';
+      clkBtn.classList.remove('on');
+    } else {
+      clkBtn.textContent = 'Auto Clock: On';
+      clkBtn.classList.add('on');
+      clk = setInterval(() => {
+        let v = ((A << 2) | (B << 1) | C + 1) & 7;
+        v = (((A << 2) | (B << 1) | C) + 1) & 7;
+        A = (v >> 2) & 1; B = (v >> 1) & 1; C = v & 1;
+        clickSound();
+        update();
+      }, 650);
+    }
+  });
+
+  soundBtn.addEventListener('click', () => {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? 'Relay Click: On' : 'Relay Click: Off';
+    soundBtn.classList.toggle('on', soundOn);
+  });
+
+  update();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,257 @@
+<!-- 13-unit-scale-lab.html — Visual Unit & Scale Comparator: Bidirectional unit converter with custom SVG scale gauges and real-world comparisons. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Visual Unit & Scale Comparator</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0f1218;
+    color: #eef2f8;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .card {
+    width: 100%;
+    max-width: 820px;
+    background: #171c26;
+    border: 1px solid #2b3346;
+    border-radius: 18px;
+    padding: 24px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.55);
+  }
+  h1 { font-size: 1.25rem; }
+  .sub { font-size: 0.82rem; color: #8c96ad; margin: 4px 0 18px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+  .tab {
+    background: #212838;
+    color: #9ba6be;
+    border: 1px solid #323c54;
+    border-radius: 999px;
+    padding: 7px 15px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .tab.active { background: #38e4ae; color: #081c15; border-color: #38e4ae; }
+  .conv-row {
+    display: grid;
+    grid-template-columns: 1fr 48px 1fr;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 640px) { .conv-row { grid-template-columns: 1fr; } }
+  .box {
+    background: #10141c;
+    border: 1px solid #2a3245;
+    border-radius: 12px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  input, select {
+    background: #1a202e;
+    color: #fff;
+    border: 1px solid #343e56;
+    border-radius: 8px;
+    padding: 9px 12px;
+    font-size: 1rem;
+    font-weight: 700;
+    width: 100%;
+  }
+  .swap {
+    background: #232a3b;
+    color: #38e4ae;
+    border: 1px solid #343e56;
+    border-radius: 50%;
+    width: 42px;
+    height: 42px;
+    font-size: 1.1rem;
+    font-weight: 800;
+    cursor: pointer;
+    margin: 0 auto;
+  }
+  .gauge-box {
+    background: #10141c;
+    border: 1px solid #2a3245;
+    border-radius: 14px;
+    padding: 16px;
+  }
+  .ref-note { font-size: 0.84rem; color: #cbd5e1; margin-top: 10px; line-height: 1.45; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Visual Unit &amp; Scale Comparator</h1>
+  <p class="sub">Convert length, mass, speed, data, and temperature with real-world visual scale comparisons</p>
+
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-cat="length">Length</button>
+    <button class="tab" data-cat="mass">Mass</button>
+    <button class="tab" data-cat="speed">Speed</button>
+    <button class="tab" data-cat="data">Data</button>
+    <button class="tab" data-cat="temp">Temperature</button>
+  </div>
+
+  <div class="conv-row">
+    <div class="box">
+      <input id="valA" type="number" value="10" step="any">
+      <select id="unitA"></select>
+    </div>
+    <button class="swap" id="swapBtn" title="Swap units">⇄</button>
+    <div class="box">
+      <input id="valB" type="number" step="any">
+      <select id="unitB"></select>
+    </div>
+  </div>
+
+  <div class="gauge-box">
+    <svg id="gauge" width="100%" height="96" viewBox="0 0 740 96">
+      <rect x="20" y="34" width="700" height="14" rx="7" fill="#1e2536"/>
+      <rect id="barFill" x="20" y="34" width="350" height="14" rx="7" fill="#38e4ae"/>
+      <circle id="marker" cx="370" cy="41" r="10" fill="#ffffff" stroke="#38e4ae" stroke-width="3"/>
+      <text id="minLbl" x="20" y="74" fill="#8c96ad" font-size="12" font-weight="700">0</text>
+      <text id="midLbl" x="370" y="74" text-anchor="middle" fill="#38e4ae" font-size="12" font-weight="700"></text>
+      <text id="maxLbl" x="720" y="74" text-anchor="end" fill="#8c96ad" font-size="12" font-weight="700"></text>
+    </svg>
+    <div class="ref-note" id="refNote"></div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const CATS = {
+    length: {
+      units: { m: ['Meters', 1], km: ['Kilometers', 1000], cm: ['Centimeters', 0.01], mm: ['Millimeters', 0.001], mi: ['Miles', 1609.344], ft: ['Feet', 0.3048], in: ['Inches', 0.0254] },
+      def: ['m', 'ft'],
+      ref: (base) => `Compared to everyday scale: ${(base / 1.7).toFixed(2)}× average human height (1.7 m) or ${(base / 100).toFixed(3)}× a football field.`
+    },
+    mass: {
+      units: { kg: ['Kilograms', 1], g: ['Grams', 0.001], lb: ['Pounds', 0.453592], oz: ['Ounces', 0.0283495], t: ['Metric Tons', 1000] },
+      def: ['kg', 'lb'],
+      ref: (base) => `Compared to everyday weight: about ${(base / 0.355).toFixed(1)} soda cans or ${(base / 1500).toFixed(4)} compact cars.`
+    },
+    speed: {
+      units: { mps: ['m/s', 1], kph: ['km/h', 0.277778], mph: ['mph', 0.44704], kn: ['Knots', 0.514444], mach: ['Mach', 343] },
+      def: ['mph', 'kph'],
+      ref: (base) => `At ${base.toFixed(2)} m/s, that is ${(base / 343 * 100).toFixed(1)}% of the speed of sound (Mach 1).`
+    },
+    data: {
+      units: { B: ['Bytes', 1], KB: ['Kilobytes', 1024], MB: ['Megabytes', 1048576], GB: ['Gigabytes', 1073741824], TB: ['Terabytes', 1099511627776] },
+      def: ['GB', 'MB'],
+      ref: (base) => `Storage equivalent: roughly ${Math.max(1, Math.round(base / 4000000)).toLocaleString()} high-res photos (4 MB each).`
+    },
+    temp: {
+      units: { C: ['Celsius (°C)', 1], F: ['Fahrenheit (°F)', 1], K: ['Kelvin (K)', 1] },
+      def: ['C', 'F'],
+      ref: (base) => base <= 0 ? 'At or below the freezing point of water (0 °C).' : base >= 100 ? 'At or above the boiling point of water (100 °C).' : 'Between freezing (0 °C) and boiling (100 °C) water.'
+    }
+  };
+
+  let cat = 'length';
+  const valA = document.getElementById('valA'), valB = document.getElementById('valB');
+  const unitA = document.getElementById('unitA'), unitB = document.getElementById('unitB');
+  const barFill = document.getElementById('barFill'), marker = document.getElementById('marker');
+  const minLbl = document.getElementById('minLbl'), midLbl = document.getElementById('midLbl'), maxLbl = document.getElementById('maxLbl');
+  const refNote = document.getElementById('refNote');
+
+  function populateUnits() {
+    const u = CATS[cat].units;
+    unitA.innerHTML = ''; unitB.innerHTML = '';
+    Object.entries(u).forEach(([k, [name]]) => {
+      unitA.add(new Option(name, k));
+      unitB.add(new Option(name, k));
+    });
+    unitA.value = CATS[cat].def[0];
+    unitB.value = CATS[cat].def[1];
+  }
+
+  function toBase(v, u) {
+    if (cat === 'temp') {
+      if (u === 'C') return v;
+      if (u === 'F') return (v - 32) * 5 / 9;
+      return v - 273.15;
+    }
+    return v * CATS[cat].units[u][1];
+  }
+
+  function fromBase(b, u) {
+    if (cat === 'temp') {
+      if (u === 'C') return b;
+      if (u === 'F') return b * 9 / 5 + 32;
+      return b + 273.15;
+    }
+    return b / CATS[cat].units[u][1];
+  }
+
+  function updateGauge(base) {
+    let pct = 0.5;
+    if (cat === 'temp') {
+      pct = Math.max(0, Math.min(1, (base + 40) / 160));
+      minLbl.textContent = '-40 °C';
+      maxLbl.textContent = '120 °C';
+    } else {
+      const log = base > 0 ? Math.log10(base + 1) / 5 : 0;
+      pct = Math.max(0.02, Math.min(1, log));
+      minLbl.textContent = '0';
+      maxLbl.textContent = 'Large Scale';
+    }
+    const w = Math.round(pct * 700);
+    barFill.setAttribute('width', w);
+    marker.setAttribute('cx', 20 + w);
+    midLbl.textContent = `${Number(valA.value || 0)} ${unitA.value} = ${Number(valB.value || 0).toFixed(3).replace(/\.?0+$/, '')} ${unitB.value}`;
+    refNote.textContent = CATS[cat].ref(base);
+  }
+
+  function convert(source) {
+    if (source === 'A') {
+      const v = parseFloat(valA.value);
+      if (isNaN(v)) return;
+      const base = toBase(v, unitA.value);
+      const res = fromBase(base, unitB.value);
+      valB.value = Number(res.toFixed(5));
+      updateGauge(base);
+    } else {
+      const v = parseFloat(valB.value);
+      if (isNaN(v)) return;
+      const base = toBase(v, unitB.value);
+      const res = fromBase(base, unitA.value);
+      valA.value = Number(res.toFixed(5));
+      updateGauge(base);
+    }
+  }
+
+  document.querySelectorAll('.tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      cat = btn.dataset.cat;
+      populateUnits();
+      valA.value = cat === 'temp' ? 22 : 10;
+      convert('A');
+    });
+  });
+
+  valA.addEventListener('input', () => convert('A'));
+  valB.addEventListener('input', () => convert('B'));
+  unitA.addEventListener('change', () => convert('A'));
+  unitB.addEventListener('change', () => convert('A'));
+  document.getElementById('swapBtn').addEventListener('click', () => {
+    const tmp = unitA.value; unitA.value = unitB.value; unitB.value = tmp;
+    convert('A');
+  });
+
+  populateUnits();
+  convert('A');
+})();
+</script>
+</body>
+</html>

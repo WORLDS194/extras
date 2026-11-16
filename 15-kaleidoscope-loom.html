@@ -1,0 +1,187 @@
+<!-- 15-kaleidoscope-loom.html — Mirror Kaleidoscope Loom: Paint radial symmetrical mandalas with glowing brushes and harmonic plucks. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mirror Kaleidoscope Loom</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0b0c12;
+    color: #f1f5f9;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 18px;
+  }
+  .bar {
+    width: 100%;
+    max-width: 920px;
+    background: #141722;
+    border: 1px solid #293046;
+    border-radius: 14px;
+    padding: 12px 18px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .bar h1 { font-size: 1.12rem; color: #e879f9; }
+  .bar p { font-size: 0.78rem; color: #8c96ad; }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button, select {
+    background: #1f2436;
+    color: #f1f5f9;
+    border: 1px solid #353f5c;
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.on { background: #e879f9; color: #200626; border-color: #e879f9; }
+  canvas#loom {
+    width: 100%;
+    max-width: 620px;
+    aspect-ratio: 1;
+    background: #07080d;
+    border: 2px solid #2b324a;
+    border-radius: 50%;
+    cursor: crosshair;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.65);
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <div>
+    <h1>Mirror Kaleidoscope Loom</h1>
+    <p>Draw anywhere inside the circle to weave glowing radial symmetry patterns</p>
+  </div>
+  <div class="btns">
+    <select id="folds">
+      <option value="6">6-Fold Symmetry</option>
+      <option value="8" selected>8-Fold Symmetry</option>
+      <option value="12">12-Fold Symmetry</option>
+      <option value="16">16-Fold Symmetry</option>
+    </select>
+    <select id="theme">
+      <option value="neon">Neon Prism</option>
+      <option value="gold">Royal Gold</option>
+      <option value="ice">Arctic Cyan</option>
+    </select>
+    <button id="soundBtn">Plucks: Off</button>
+    <button id="clearBtn">Clear</button>
+  </div>
+</div>
+<canvas id="loom" width="620" height="620"></canvas>
+
+<script>
+(() => {
+  const canvas = document.getElementById('loom');
+  const ctx = canvas.getContext('2d');
+  const foldsEl = document.getElementById('folds');
+  const themeEl = document.getElementById('theme');
+  const soundBtn = document.getElementById('soundBtn');
+
+  let drawing = false, last = null, hue = 0;
+  let audioCtx = null, soundOn = false, lastPluck = 0;
+
+  function clearCanvas() {
+    ctx.fillStyle = '#07080d';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Subtle guide rings
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.lineWidth = 1;
+    [80, 160, 240].forEach(r => {
+      ctx.beginPath(); ctx.arc(310, 310, r, 0, Math.PI * 2); ctx.stroke();
+    });
+  }
+
+  function pluck(dist) {
+    if (!soundOn || !audioCtx) return;
+    const now = performance.now();
+    if (now - lastPluck < 75) return;
+    lastPluck = now;
+    const scale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 659.25];
+    const idx = Math.min(scale.length - 1, Math.floor((dist / 310) * scale.length));
+    const t = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(scale[idx], t);
+    g.gain.setValueAtTime(0.06, t);
+    g.gain.exponentialRampToValueAtTime(0.0008, t + 0.25);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(t); osc.stop(t + 0.26);
+  }
+
+  function strokeColor() {
+    const th = themeEl.value;
+    if (th === 'gold') return `hsl(${38 + Math.sin(hue * 0.05) * 12}, 90%, 62%)`;
+    if (th === 'ice') return `hsl(${185 + Math.sin(hue * 0.05) * 25}, 92%, 65%)`;
+    return `hsl(${hue % 360}, 95%, 64%)`;
+  }
+
+  function drawSym(p1, p2) {
+    const cx = canvas.width / 2, cy = canvas.height / 2;
+    const n = Number(foldsEl.value);
+    const col = strokeColor();
+    hue += 2.5;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 2.6;
+    ctx.lineCap = 'round';
+    ctx.shadowColor = col;
+    ctx.shadowBlur = 8;
+
+    const x1 = p1.x - cx, y1 = p1.y - cy;
+    const x2 = p2.x - cx, y2 = p2.y - cy;
+
+    for (let i = 0; i < n; i++) {
+      ctx.save();
+      ctx.rotate((i * Math.PI * 2) / n);
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      ctx.scale(1, -1);
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+    pluck(Math.hypot(x2, y2));
+  }
+
+  function getPos(e) {
+    const r = canvas.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * (canvas.width / r.width), y: (e.clientY - r.top) * (canvas.height / r.height) };
+  }
+
+  canvas.addEventListener('pointerdown', (e) => { drawing = true; last = getPos(e); });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!drawing) return;
+    const cur = getPos(e);
+    drawSym(last, cur);
+    last = cur;
+  });
+  window.addEventListener('pointerup', () => { drawing = false; last = null; });
+
+  document.getElementById('clearBtn').addEventListener('click', clearCanvas);
+  soundBtn.addEventListener('click', () => {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? 'Plucks: On' : 'Plucks: Off';
+    soundBtn.classList.toggle('on', soundOn);
+  });
+
+  clearCanvas();
+})();
+</script>
+</body>
+</html>

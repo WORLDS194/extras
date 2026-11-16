@@ -1,0 +1,181 @@
+<!-- 25-bpm-tap-metronome.html — Polyrhythm & Tap-Tempo Metronome: Precision Web Audio metronome with tap-tempo BPM, visual ring, and polyrhythm beats. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polyrhythm & Tap-Tempo Metronome</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(circle at 50% 20%, #1a2030 0%, #0d1017 75%);
+    color: #eef2f8;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .card {
+    width: 100%;
+    max-width: 560px;
+    background: #151924;
+    border: 1px solid #2b3347;
+    border-radius: 20px;
+    padding: 24px;
+    text-align: center;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+  }
+  h1 { font-size: 1.2rem; color: #38e4ae; }
+  .sub { font-size: 0.8rem; color: #8c96ad; margin: 4px 0 18px; }
+  .bpm-num { font-size: 3.4rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+  .bpm-lbl { font-size: 0.78rem; color: #8c96ad; letter-spacing: 0.1em; margin-bottom: 14px; }
+  .dots { display: flex; justify-content: center; gap: 12px; margin: 18px 0; }
+  .dot {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #22293b;
+    border: 2px solid #353f59;
+    transition: transform 0.08s, background 0.08s;
+  }
+  .dot.lit { background: #38e4ae; border-color: #a7f3d0; transform: scale(1.22); }
+  .dot.accent.lit { background: #fbbf24; border-color: #fef08a; }
+  input[type="range"] { width: 100%; accent-color: #38e4ae; margin-bottom: 16px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  select, button {
+    background: #202638;
+    color: #eef2f8;
+    border: 1px solid #353f5c;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 0.86rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  button.primary { background: #38e4ae; color: #061c14; border-color: #38e4ae; }
+  button.tap { background: #3b82f6; color: #fff; border-color: #60a5fa; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Polyrhythm &amp; Tap-Tempo Metronome</h1>
+  <p class="sub">Tap to detect BPM, choose beats per bar, and practice with crisp Web Audio clicks</p>
+
+  <div class="bpm-num" id="bpmVal">120</div>
+  <div class="bpm-lbl">BEATS PER MINUTE</div>
+
+  <div class="dots" id="dots"></div>
+
+  <input id="bpmRange" type="range" min="40" max="220" value="120">
+
+  <div class="row">
+    <select id="sigSel">
+      <option value="4">4/4 Time</option>
+      <option value="3">3/4 Waltz</option>
+      <option value="5">5/4 Odd</option>
+      <option value="6">6/8 Compound</option>
+      <option value="7">7/8 Groove</option>
+    </select>
+    <button id="tapBtn" class="tap">Tap Tempo</button>
+  </div>
+
+  <button id="playBtn" class="primary" style="width:100%;">Start Metronome</button>
+</div>
+
+<script>
+(() => {
+  const bpmVal = document.getElementById('bpmVal');
+  const bpmRange = document.getElementById('bpmRange');
+  const sigSel = document.getElementById('sigSel');
+  const dotsEl = document.getElementById('dots');
+  const playBtn = document.getElementById('playBtn');
+
+  let bpm = 120, beats = 4, curBeat = 0, running = false, timer = null;
+  let taps = [], audioCtx = null;
+
+  function buildDots() {
+    dotsEl.innerHTML = '';
+    for (let i = 0; i < beats; i++) {
+      const d = document.createElement('div');
+      d.className = 'dot' + (i === 0 ? ' accent' : '');
+      dotsEl.appendChild(d);
+    }
+  }
+
+  function clickSound(accent) {
+    if (!audioCtx) return;
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(accent ? 1100 : 720, now);
+    g.gain.setValueAtTime(accent ? 0.25 : 0.14, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(now); osc.stop(now + 0.05);
+  }
+
+  function tick() {
+    const all = dotsEl.querySelectorAll('.dot');
+    all.forEach(d => d.classList.remove('lit'));
+    if (all[curBeat]) all[curBeat].classList.add('lit');
+    clickSound(curBeat === 0);
+    curBeat = (curBeat + 1) % beats;
+  }
+
+  function restart() {
+    if (!running) return;
+    clearInterval(timer);
+    timer = setInterval(tick, (60 / bpm) * 1000);
+  }
+
+  bpmRange.addEventListener('input', () => {
+    bpm = Number(bpmRange.value);
+    bpmVal.textContent = bpm;
+    restart();
+  });
+
+  sigSel.addEventListener('change', () => {
+    beats = Number(sigSel.value);
+    curBeat = 0;
+    buildDots();
+  });
+
+  document.getElementById('tapBtn').addEventListener('click', () => {
+    const now = performance.now();
+    if (taps.length && now - taps[taps.length - 1] > 2000) taps = [];
+    taps.push(now);
+    if (taps.length > 6) taps.shift();
+    if (taps.length >= 2) {
+      let sum = 0;
+      for (let i = 1; i < taps.length; i++) sum += taps[i] - taps[i - 1];
+      const avg = sum / (taps.length - 1);
+      bpm = Math.max(40, Math.min(220, Math.round(60000 / avg)));
+      bpmVal.textContent = bpm;
+      bpmRange.value = bpm;
+      restart();
+    }
+  });
+
+  playBtn.addEventListener('click', () => {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    running = !running;
+    playBtn.textContent = running ? 'Stop Metronome' : 'Start Metronome';
+    if (running) {
+      curBeat = 0;
+      tick();
+      timer = setInterval(tick, (60 / bpm) * 1000);
+    } else {
+      clearInterval(timer);
+      dotsEl.querySelectorAll('.dot').forEach(d => d.classList.remove('lit'));
+    }
+  });
+
+  buildDots();
+})();
+</script>
+</body>
+</html>
